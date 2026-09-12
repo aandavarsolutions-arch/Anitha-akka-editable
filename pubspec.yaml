@@ -1,0 +1,56 @@
+name: jarvis_customer2
+description: Customer 2 Construction Billing App
+publish_to: "none"
+
+version: 1.0.0+1
+
+environment:
+  sdk: ">=3.0.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  provider: ^6.0.5
+  intl: ^0.19.0
+
+  # ✅ DATABASE (PERSISTENT – RESET AAGATHU)
+  sqflite: ^2.3.3
+  path: ^1.9.0
+
+  # (optional – icons)
+  cupertino_icons: ^1.0.6
+  fl_chart: ^0.66.0
+
+  # FFI for Windows
+  sqflite_common_ffi: ^2.3.0
+  sqlite3_flutter_libs: ^0.5.20
+  
+  # File Handling
+  file_picker: ^8.0.0
+  path_provider: ^2.1.5
+
+  # Google Drive Backup
+  googleapis: ^11.0.0
+  googleapis_auth: ^1.4.1
+  url_launcher: ^6.1.11
+  http: ^1.1.0
+  archive: ^3.3.7
+
+  # PDF Generation
+  pdf: ^3.10.0
+
+  printing: ^5.11.0
+  excel: ^4.0.0
+  share_plus: ^12.0.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: 3.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/logo.png
+    - assets/customer_header.png
