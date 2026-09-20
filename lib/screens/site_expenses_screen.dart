@@ -802,7 +802,7 @@ class _SiteExpensesScreenState extends State<SiteExpensesScreen> with SingleTick
                   ),
                   const SizedBox(width: 6),
                   ElevatedButton.icon(
-                    onPressed: () => _showIssueFuelDialog(context, data),
+                    onPressed: () => showDispenseFuelDialog(context, data),
                     icon: const Icon(Icons.local_gas_station, size: 16),
                     label: const Text('GIVE TO VEHICLE'),
                     style: ElevatedButton.styleFrom(
@@ -822,201 +822,10 @@ class _SiteExpensesScreenState extends State<SiteExpensesScreen> with SingleTick
   }
 
   void _showIssueFuelDialog(BuildContext context, DataProvider data) {
-    final registry = data.vehicleRegistry;
-
-    // Extract unique Vehicle Types from registry
-    final Set<String> vehicleTypes = {'All Types'};
-    for (var v in registry) {
-      if (v['type'] != null && v['type'].toString().trim().isNotEmpty) {
-        vehicleTypes.add(v['type'].toString().trim());
-      }
-    }
-    List<String> typeList = vehicleTypes.toList();
-    String selectedFilterType = 'All Types';
-
-    List<Map<String, dynamic>> getFilteredVehicles(String typeFilter) {
-      if (typeFilter == 'All Types') return registry;
-      return registry.where((v) => (v['type'] ?? '').toString().trim() == typeFilter).toList();
-    }
-
-    var availableVehicles = getFilteredVehicles(selectedFilterType);
-    String? selectedVehNumber = availableVehicles.isNotEmpty ? availableVehicles.first['number'] as String? : null;
-    String selectedVehType = availableVehicles.isNotEmpty ? (availableVehicles.first['type'] as String? ?? 'Lorry') : 'Lorry';
-
-    final litersController = TextEditingController();
-    final notesController = TextEditingController();
-    DateTime issueDate = DateTime.now();
-
-    showDialog(
-      context: context,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (context, setDialogState) {
-          final currentFilteredVehicles = getFilteredVehicles(selectedFilterType);
-          if (selectedVehNumber != null && !currentFilteredVehicles.any((v) => v['number'] == selectedVehNumber)) {
-            selectedVehNumber = currentFilteredVehicles.isNotEmpty ? currentFilteredVehicles.first['number'] as String? : null;
-            if (currentFilteredVehicles.isNotEmpty) {
-              selectedVehType = currentFilteredVehicles.first['type'] ?? 'Lorry';
-            }
-          }
-
-          return AlertDialog(
-            title: const Row(
-              children: [
-                Icon(Icons.local_gas_station, color: JarvisTheme.secondary),
-                SizedBox(width: 8),
-                Text('Dispense Fuel to Vehicle', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-              ],
-            ),
-            content: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: JarvisTheme.secondary.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Text('Tank Balance:', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-                        Text('${data.mainTankLiters.toStringAsFixed(1)} Liters', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: JarvisTheme.secondary)),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  // 1. Filter by Vehicle Type
-                  DropdownButtonFormField<String>(
-                    value: selectedFilterType,
-                    decoration: const InputDecoration(labelText: 'Select Vehicle Type', border: OutlineInputBorder(), isDense: true),
-                    items: typeList.map((t) => DropdownMenuItem<String>(
-                      value: t,
-                      child: Text(t == 'All Types' ? '🚗 All Vehicle Types' : '🚚 $t'),
-                    )).toList(),
-                    onChanged: (val) {
-                      if (val != null) {
-                        setDialogState(() {
-                          selectedFilterType = val;
-                          final filtered = getFilteredVehicles(val);
-                          selectedVehNumber = filtered.isNotEmpty ? filtered.first['number'] as String? : null;
-                          if (filtered.isNotEmpty) {
-                            selectedVehType = filtered.first['type'] ?? 'Lorry';
-                          }
-                        });
-                      }
-                    },
-                  ),
-                  const SizedBox(height: 12),
-                  // 2. Filtered Target Vehicle Number Dropdown
-                  DropdownButtonFormField<String>(
-                    value: selectedVehNumber,
-                    decoration: const InputDecoration(labelText: 'Select Target Vehicle Number *', border: OutlineInputBorder(), isDense: true),
-                    items: currentFilteredVehicles.map((v) => DropdownMenuItem<String>(
-                      value: v['number'],
-                      child: Text('${v['number']} (${v['type']})'),
-                    )).toList(),
-                    onChanged: (val) {
-                      if (val != null) {
-                        setDialogState(() {
-                          selectedVehNumber = val;
-                          final veh = currentFilteredVehicles.firstWhere((v) => v['number'] == val, orElse: () => {});
-                          selectedVehType = veh['type'] ?? 'Lorry';
-                        });
-                      }
-                    },
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: litersController,
-                    decoration: const InputDecoration(labelText: 'Liters Issued *', border: OutlineInputBorder(), isDense: true, suffixText: 'L'),
-                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                    autofocus: true,
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: notesController,
-                    decoration: const InputDecoration(labelText: 'Description / Notes (Optional)', border: OutlineInputBorder(), isDense: true),
-                  ),
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      Expanded(child: Text('Date: ${DateFormat('dd MMM yyyy').format(issueDate)}', style: const TextStyle(fontWeight: FontWeight.bold))),
-                      IconButton(
-                        icon: const Icon(Icons.calendar_today, size: 20),
-                        onPressed: () async {
-                          final picked = await showDatePicker(
-                            context: context,
-                            initialDate: issueDate,
-                            firstDate: DateTime(2020),
-                            lastDate: DateTime(2030),
-                          );
-                          if (picked != null) {
-                            setDialogState(() => issueDate = picked);
-                          }
-                        },
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-            actions: [
-              TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('CANCEL')),
-              ElevatedButton(
-                style: ElevatedButton.styleFrom(backgroundColor: JarvisTheme.secondary, foregroundColor: Colors.black),
-                onPressed: () async {
-                  final litersVal = double.tryParse(litersController.text);
-                  if (litersVal == null || litersVal <= 0) {
-                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please enter valid liters')));
-                    return;
-                  }
-                  if (litersVal > data.mainTankLiters) {
-                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Insufficient Tank Stock! Available: ${data.mainTankLiters.toStringAsFixed(1)} L')));
-                    return;
-                  }
-                  if (selectedVehNumber == null || selectedVehNumber!.isEmpty) {
-                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please select a target vehicle')));
-                    return;
-                  }
-
-                  try {
-                    final success = await data.issueFuelToVehicle(
-                      date: DateFormat('dd MMM yyyy').format(issueDate),
-                      vehicleNumber: selectedVehNumber!,
-                      vehicleType: selectedVehType,
-                      liters: litersVal,
-                      notes: notesController.text,
-                    );
-
-                    if (context.mounted) {
-                      if (success) {
-                        Navigator.pop(dialogContext);
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('Issued $litersVal L to $selectedVehNumber'))
-                        );
-                      } else {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Failed to issue fuel. Check tank balance.'))
-                        );
-                      }
-                    }
-                  } catch (err) {
-                    if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('Error: $err'))
-                      );
-                    }
-                  }
-                },
-                child: const Text('ISSUE FUEL'),
-              ),
-            ],
-          );
-        },
-      ),
-    );
+    showDispenseFuelDialog(context, data);
   }
+
+
 
   void _showHistoryDialog(BuildContext context, String id, String name) {
     Navigator.push(context, MaterialPageRoute(builder: (_) => BunkLedgerScreen(supplierId: id, supplierName: name)));
@@ -1763,7 +1572,20 @@ class _SiteExpensesScreenState extends State<SiteExpensesScreen> with SingleTick
                             PopupMenuButton<String>(
                               onSelected: (value) async {
                                 if (value == 'edit') {
-                                  _showAddExpenseDialog(context, expense: item);
+                                  final String expId = (item['id'] ?? '').toString();
+                                  final String supplier = (item['supplier'] ?? '').toString().trim();
+                                  final String title = (item['title'] ?? '').toString().trim();
+                                  bool isTankDispense = expId.startsWith('EXP_TANK_') || 
+                                                        supplier == 'Storage Tank' || 
+                                                        title.contains('Tank Dispense') ||
+                                                        item['is_internal_issue'] == 1 ||
+                                                        item['is_internal_issue'] == '1';
+
+                                  if (isTankDispense) {
+                                    showDispenseFuelDialog(context, data, existingExpense: item);
+                                  } else {
+                                    _showAddExpenseDialog(context, expense: item);
+                                  }
                                 } else if (value == 'pay') {
                                   _showAddPaymentDialog(context, item);
                                 } else if (value == 'ledger') {
@@ -2683,3 +2505,270 @@ class _SiteExpensesScreenState extends State<SiteExpensesScreen> with SingleTick
     );
   }
 }
+
+void showDispenseFuelDialog(
+  BuildContext context,
+  DataProvider data, {
+  Map<String, dynamic>? existingExpense,
+  Map<String, dynamic>? existingIssue,
+}) {
+  final registry = data.vehicleRegistry;
+
+  // Extract unique Vehicle Types from registry
+  final Set<String> vehicleTypes = {'All Types'};
+  for (var v in registry) {
+    if (v['type'] != null && v['type'].toString().trim().isNotEmpty) {
+      vehicleTypes.add(v['type'].toString().trim());
+    }
+  }
+  List<String> typeList = vehicleTypes.toList();
+  String selectedFilterType = 'All Types';
+
+  List<Map<String, dynamic>> getFilteredVehicles(String typeFilter) {
+    if (typeFilter == 'All Types') return registry;
+    return registry.where((v) => (v['type'] ?? '').toString().trim() == typeFilter).toList();
+  }
+
+  final bool isEdit = existingExpense != null || existingIssue != null;
+  dynamic issueId;
+  double oldLiters = 0.0;
+  String? initVehNumber;
+  String? initNotes;
+  DateTime initDate = DateTime.now();
+
+  if (existingExpense != null) {
+    issueId = existingExpense['id'];
+    oldLiters = double.tryParse(existingExpense['liters']?.toString() ?? existingExpense['quantity']?.toString() ?? '0') ?? 0.0;
+    if (oldLiters <= 0) {
+      final match = RegExp(r'\((\d+(?:\.\d+)?)\s*L').firstMatch(existingExpense['title'] ?? '');
+      if (match != null) {
+        oldLiters = double.tryParse(match.group(1) ?? '0') ?? 0.0;
+      }
+    }
+    initVehNumber = (existingExpense['vehicle_no'] ?? '').toString().trim();
+    initNotes = (existingExpense['material_name'] ?? existingExpense['notes'] ?? '').toString().trim();
+    if (initNotes == 'Tank Fuel Issue') initNotes = '';
+    if (existingExpense['date'] != null) {
+      try {
+        initDate = DateFormat('dd MMM yyyy').parse(existingExpense['date']);
+      } catch (_) {}
+    }
+  } else if (existingIssue != null) {
+    issueId = existingIssue['id'];
+    oldLiters = (existingIssue['liters'] as num?)?.toDouble() ?? 0.0;
+    initVehNumber = (existingIssue['vehicle_number'] ?? '').toString().trim();
+    initNotes = (existingIssue['notes'] ?? '').toString().trim();
+    if (existingIssue['date'] != null) {
+      try {
+        initDate = DateFormat('dd MMM yyyy').parse(existingIssue['date']);
+      } catch (_) {}
+    }
+  }
+
+  var availableVehicles = getFilteredVehicles(selectedFilterType);
+  String? selectedVehNumber = (initVehNumber != null && initVehNumber.isNotEmpty)
+      ? initVehNumber
+      : (availableVehicles.isNotEmpty ? availableVehicles.first['number'] as String? : null);
+
+  if (selectedVehNumber != null) {
+    final matchingVeh = registry.firstWhere((v) => v['number'] == selectedVehNumber, orElse: () => {});
+    if (matchingVeh.isNotEmpty && matchingVeh['type'] != null) {
+      final vType = matchingVeh['type'].toString().trim();
+      if (typeList.contains(vType)) {
+        selectedFilterType = vType;
+        availableVehicles = getFilteredVehicles(selectedFilterType);
+      }
+    }
+  }
+
+  String selectedVehType = availableVehicles.isNotEmpty ? (availableVehicles.first['type'] as String? ?? 'Lorry') : 'Lorry';
+
+  final litersController = TextEditingController(text: isEdit && oldLiters > 0 ? (oldLiters % 1 == 0 ? oldLiters.toInt().toString() : oldLiters.toString()) : '');
+  final notesController = TextEditingController(text: initNotes ?? '');
+  DateTime issueDate = initDate;
+
+  showDialog(
+    context: context,
+    builder: (dialogContext) => StatefulBuilder(
+      builder: (context, setDialogState) {
+        final currentFilteredVehicles = getFilteredVehicles(selectedFilterType);
+        if (selectedVehNumber != null && !currentFilteredVehicles.any((v) => v['number'] == selectedVehNumber)) {
+          selectedVehNumber = currentFilteredVehicles.isNotEmpty ? currentFilteredVehicles.first['number'] as String? : null;
+          if (currentFilteredVehicles.isNotEmpty) {
+            selectedVehType = currentFilteredVehicles.first['type'] ?? 'Lorry';
+          }
+        }
+
+        final double effectiveStock = data.mainTankLiters + oldLiters;
+
+        return AlertDialog(
+          title: Row(
+            children: [
+              const Icon(Icons.local_gas_station, color: JarvisTheme.secondary),
+              const SizedBox(width: 8),
+              Text(isEdit ? 'Edit Tank Fuel Issue' : 'Dispense Fuel to Vehicle', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+            ],
+          ),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: JarvisTheme.secondary.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text('Tank Balance:', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                      Text('${effectiveStock.toStringAsFixed(1)} Liters', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: JarvisTheme.secondary)),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+                // 1. Filter by Vehicle Type
+                DropdownButtonFormField<String>(
+                  value: selectedFilterType,
+                  decoration: const InputDecoration(labelText: 'Select Vehicle Type', border: OutlineInputBorder(), isDense: true),
+                  items: typeList.map((t) => DropdownMenuItem<String>(
+                    value: t,
+                    child: Text(t == 'All Types' ? '🚗 All Vehicle Types' : '🚚 $t'),
+                  )).toList(),
+                  onChanged: (val) {
+                    if (val != null) {
+                      setDialogState(() {
+                        selectedFilterType = val;
+                        final filtered = getFilteredVehicles(val);
+                        selectedVehNumber = filtered.isNotEmpty ? filtered.first['number'] as String? : null;
+                        if (filtered.isNotEmpty) {
+                          selectedVehType = filtered.first['type'] ?? 'Lorry';
+                        }
+                      });
+                    }
+                  },
+                ),
+                const SizedBox(height: 12),
+                // 2. Filtered Target Vehicle Number Dropdown
+                DropdownButtonFormField<String>(
+                  value: selectedVehNumber,
+                  decoration: const InputDecoration(labelText: 'Select Target Vehicle Number *', border: OutlineInputBorder(), isDense: true),
+                  items: currentFilteredVehicles.map((v) => DropdownMenuItem<String>(
+                    value: v['number'],
+                    child: Text('${v['number']} (${v['type']})'),
+                  )).toList(),
+                  onChanged: (val) {
+                    if (val != null) {
+                      setDialogState(() {
+                        selectedVehNumber = val;
+                        final veh = currentFilteredVehicles.firstWhere((v) => v['number'] == val, orElse: () => {});
+                        selectedVehType = veh['type'] ?? 'Lorry';
+                      });
+                    }
+                  },
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: litersController,
+                  decoration: const InputDecoration(labelText: 'Liters Issued *', border: OutlineInputBorder(), isDense: true, suffixText: 'L'),
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  autofocus: !isEdit,
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: notesController,
+                  decoration: const InputDecoration(labelText: 'Description / Notes (Optional)', border: OutlineInputBorder(), isDense: true),
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(child: Text('Date: ${DateFormat('dd MMM yyyy').format(issueDate)}', style: const TextStyle(fontWeight: FontWeight.bold))),
+                    IconButton(
+                      icon: const Icon(Icons.calendar_today, size: 20),
+                      onPressed: () async {
+                        final picked = await showDatePicker(
+                          context: context,
+                          initialDate: issueDate,
+                          firstDate: DateTime(2020),
+                          lastDate: DateTime(2030),
+                        );
+                        if (picked != null) {
+                          setDialogState(() => issueDate = picked);
+                        }
+                      },
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('CANCEL')),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: JarvisTheme.secondary, foregroundColor: Colors.black),
+              onPressed: () async {
+                final litersVal = double.tryParse(litersController.text);
+                if (litersVal == null || litersVal <= 0) {
+                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please enter valid liters')));
+                  return;
+                }
+                if (litersVal > effectiveStock) {
+                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Insufficient Tank Stock! Available: ${effectiveStock.toStringAsFixed(1)} L')));
+                  return;
+                }
+                if (selectedVehNumber == null || selectedVehNumber!.isEmpty) {
+                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please select a target vehicle')));
+                  return;
+                }
+
+                try {
+                  bool success = false;
+                  if (isEdit && issueId != null) {
+                    success = await data.updateFuelIssue(
+                      issueId: issueId,
+                      date: DateFormat('dd MMM yyyy').format(issueDate),
+                      vehicleNumber: selectedVehNumber!,
+                      vehicleType: selectedVehType,
+                      liters: litersVal,
+                      notes: notesController.text,
+                    );
+                  } else {
+                    success = await data.issueFuelToVehicle(
+                      date: DateFormat('dd MMM yyyy').format(issueDate),
+                      vehicleNumber: selectedVehNumber!,
+                      vehicleType: selectedVehType,
+                      liters: litersVal,
+                      notes: notesController.text,
+                    );
+                  }
+
+                  if (context.mounted) {
+                    if (success) {
+                      Navigator.pop(dialogContext);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text(isEdit ? 'Updated fuel issue for $selectedVehNumber' : 'Issued $litersVal L to $selectedVehNumber'))
+                      );
+                    } else {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Failed to save fuel issue. Check tank balance.'))
+                      );
+                    }
+                  }
+                } catch (err) {
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Error: $err'))
+                    );
+                  }
+                }
+              },
+              child: Text(isEdit ? 'SAVE' : 'ISSUE FUEL'),
+            ),
+          ],
+        );
+      },
+    ),
+  );
+}
+

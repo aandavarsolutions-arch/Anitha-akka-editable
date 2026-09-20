@@ -539,6 +539,12 @@ class _AddDriverPaymentScreenState extends State<AddDriverPaymentScreen> {
                                 ],
                               ),
                               IconButton(
+                                icon: const Icon(Icons.edit_outlined, size: 20, color: Colors.blue),
+                                onPressed: () {
+                                  _showEditPaymentDialog(context, data, pay);
+                                },
+                              ),
+                              IconButton(
                                 icon: const Icon(Icons.delete_outline, size: 20, color: Colors.red),
                                 onPressed: () {
                                   showDialog(
@@ -632,6 +638,112 @@ class _AddDriverPaymentScreenState extends State<AddDriverPaymentScreen> {
         content: Text('Payment of ₹${amt.toInt()} recorded for $driverName at $formattedTime'),
         backgroundColor: Colors.green,
       ),
+    );
+  }
+
+  void _showEditPaymentDialog(BuildContext context, DataProvider data, Map<String, dynamic> pay) {
+    final amtVal = data.parseAmount(pay['amount']);
+    final editAmountController = TextEditingController(text: amtVal > 0 ? amtVal.toInt().toString() : '');
+    String selectedMode = (pay['mode'] ?? 'GPAY').toString().trim();
+    if (selectedMode.isEmpty) selectedMode = 'Cash';
+
+    final driverId = pay['driver_id']?.toString();
+    final driver = data.allDrivers.firstWhere(
+      (d) => d['id'].toString() == driverId,
+      orElse: () => {},
+    );
+    final driverName = driver['name'] ?? 'Driver';
+
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: Text('Edit Payment - $driverName'),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Amount Paid (₹):', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                    const SizedBox(height: 6),
+                    TextField(
+                      controller: editAmountController,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(
+                        border: OutlineInputBorder(),
+                        isDense: true,
+                        hintText: 'Enter new amount',
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    const Text('Payment Mode:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                    const SizedBox(height: 6),
+                    DropdownButtonFormField<String>(
+                      value: selectedMode,
+                      decoration: const InputDecoration(
+                        border: OutlineInputBorder(),
+                        isDense: true,
+                      ),
+                      items: const [
+                        DropdownMenuItem(value: 'Cash', child: Text('Cash')),
+                        DropdownMenuItem(value: 'GPAY', child: Text('GPAY')),
+                        DropdownMenuItem(value: 'Bank', child: Text('Bank')),
+                        DropdownMenuItem(value: 'Give Advance', child: Text('Give Advance (அட்வான்ஸ் வழங்குதல்)')),
+                        DropdownMenuItem(value: 'Deduct from Advance', child: Text('Deduct from Advance (அட்வான்ஸில் கழித்தல்)')),
+                      ],
+                      onChanged: (val) {
+                        if (val != null) {
+                          setDialogState(() {
+                            selectedMode = val;
+                          });
+                        }
+                      },
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('CANCEL'),
+                ),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: JarvisTheme.primary,
+                    foregroundColor: Colors.white,
+                  ),
+                  onPressed: () async {
+                    final newAmt = double.tryParse(editAmountController.text) ?? 0;
+                    if (newAmt <= 0) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Please enter a valid amount')),
+                      );
+                      return;
+                    }
+                    await data.updateDriverPayment(
+                      pay['id'],
+                      driverId: driverId ?? '',
+                      amount: newAmt,
+                      date: _selectedDate,
+                      mode: selectedMode,
+                      time: pay['time'],
+                    );
+                    if (ctx.mounted) Navigator.pop(ctx);
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Payment updated successfully'), backgroundColor: Colors.green),
+                      );
+                    }
+                  },
+                  child: const Text('UPDATE'),
+                ),
+              ],
+            );
+          },
+        );
+      },
     );
   }
 }

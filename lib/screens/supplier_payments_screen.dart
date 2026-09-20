@@ -678,6 +678,7 @@ class SupplierDetailScreen extends StatelessWidget {
 
   void _showPaymentDialog(BuildContext context, Map<String, dynamic> supplier) {
     final amountController = TextEditingController();
+    final descController = TextEditingController();
     DateTime selectedDate = DateTime.now();
     
     showDialog(
@@ -698,6 +699,14 @@ class SupplierDetailScreen extends StatelessWidget {
                 ),
                 keyboardType: TextInputType.number,
                 autofocus: true,
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: descController,
+                decoration: const InputDecoration(
+                  labelText: 'Description / Notes (Optional)',
+                  border: OutlineInputBorder(),
+                ),
               ),
               const SizedBox(height: 16),
               Row(
@@ -735,7 +744,7 @@ class SupplierDetailScreen extends StatelessWidget {
               onPressed: () {
                 final amount = double.tryParse(amountController.text);
                 if (amount != null && amount > 0) {
-                  _processPayment(context, supplier, amount, DateFormat('dd MMM yyyy').format(selectedDate));
+                  _processPayment(context, supplier, amount, DateFormat('dd MMM yyyy').format(selectedDate), notes: descController.text.trim());
                   Navigator.pop(context);
                 }
               },
@@ -747,8 +756,8 @@ class SupplierDetailScreen extends StatelessWidget {
     );
   }
 
-  void _processPayment(BuildContext context, Map<String, dynamic> supplier, double amount, String date) {
-    Provider.of<DataProvider>(context, listen: false).recordSupplierPayment(supplier['id'], amount, date);
+  void _processPayment(BuildContext context, Map<String, dynamic> supplier, double amount, String date, {String? notes}) {
+    Provider.of<DataProvider>(context, listen: false).recordSupplierPayment(supplier['id'], amount, date, notes: (notes != null && notes.isNotEmpty) ? notes : 'Payment Made');
   }
 
   TableRow _buildTableRow(List<String> cells, {bool isHeader = false}) {

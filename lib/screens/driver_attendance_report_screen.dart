@@ -121,76 +121,132 @@ class _DriverAttendanceReportScreenState extends State<DriverAttendanceReportScr
               : activeDrivers.isEmpty 
                 ? Center(child: Text('No ${_filterType == 'All' ? '' : _filterType} Drivers Found'))
                 : SingleChildScrollView(
-                    scrollDirection: Axis.vertical,
-                    child: SingleChildScrollView(
-                      scrollDirection: Axis.horizontal,
-                      child: DataTable(
-                        columnSpacing: 12,
-                        horizontalMargin: 12,
-                        columns: [
-                          const DataColumn(label: Text('Driver Name')),
-                          const DataColumn(label: Text('Total')),
-                          ...List.generate(daysInMonth, (index) => DataColumn(label: Text('${index + 1}'))),
-                        ],
-                        rows: activeDrivers.map((driver) {
-                          final driverId = driver['id'];
-                          final map1 = _attendanceData[driverId] ?? {};
-                          final map2 = _attendanceData2[driverId] ?? {};
-                          final type = driver['type'] ?? 'Daily';
-                          
-                          int totalPresent = 0;
-                          for (var v in map1.values) if (v == 'Present') totalPresent++;
-                          for (var v in map2.values) if (v == 'Present') totalPresent++;
-
-                          return DataRow(
-                            cells: [
-                              DataCell(
-                                Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Text(driver['name'] ?? 'Unknown', style: const TextStyle(fontWeight: FontWeight.w600)),
-                                    const SizedBox(width: 4),
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                                      decoration: BoxDecoration(
-                                        color: (type == 'Monthly' ? Colors.blue : Colors.orange).withValues(alpha: 0.15),
-                                        borderRadius: BorderRadius.circular(4),
-                                      ),
-                                      child: Text(
-                                        type == 'Monthly' ? 'M' : 'D',
-                                        style: TextStyle(
-                                          fontSize: 9,
-                                          fontWeight: FontWeight.bold,
-                                          color: type == 'Monthly' ? Colors.blue[800] : Colors.orange[900],
-                                        ),
-                                      ),
-                                    ),
-                                  ],
+                    scrollDirection: Axis.horizontal,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // Sticky Header Row with fixed widths
+                        Container(
+                          color: Colors.grey[200],
+                          padding: const EdgeInsets.symmetric(vertical: 10),
+                          child: Row(
+                            children: [
+                              const SizedBox(
+                                width: 150,
+                                child: Padding(
+                                  padding: EdgeInsets.only(left: 12),
+                                  child: Text('Driver Name', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
                                 ),
                               ),
-                              DataCell(Text(totalPresent.toString(), style: const TextStyle(fontWeight: FontWeight.bold))),
-                              ...List.generate(daysInMonth, (index) {
-                                final day = index + 1;
-                                final s1 = map1[day];
-                                final s2 = map2[day];
-                                int daily = 0;
-                                if (s1 == 'Present') daily++;
-                                if (s2 == 'Present') daily++;
-
-                                return DataCell(
-                                  Center(
-                                    child: daily > 0 
-                                      ? Text(daily.toString(), style: const TextStyle(color: Colors.green, fontWeight: FontWeight.bold))
-                                      : (s1 == 'Absent' || s2 == 'Absent') 
-                                        ? const Icon(Icons.close, size: 12, color: Colors.red)
-                                        : const Text('-', style: TextStyle(color: Colors.grey)),
-                                  )
-                                );
-                              }),
+                              const SizedBox(
+                                width: 45,
+                                child: Center(
+                                  child: Text('Total', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                                ),
+                              ),
+                              ...List.generate(daysInMonth, (index) => SizedBox(
+                                width: 32,
+                                child: Center(
+                                  child: Text('${index + 1}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                                ),
+                              )),
                             ],
-                          );
-                        }).toList(),
-                      ),
+                          ),
+                        ),
+                        const Divider(height: 1, thickness: 1),
+                        // Vertically Scrollable Body Rows
+                        Expanded(
+                          child: SingleChildScrollView(
+                            scrollDirection: Axis.vertical,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: activeDrivers.map((driver) {
+                                final driverId = driver['id'];
+                                final map1 = _attendanceData[driverId] ?? {};
+                                final map2 = _attendanceData2[driverId] ?? {};
+                                final type = driver['type'] ?? 'Daily';
+                                
+                                int totalPresent = 0;
+                                for (var v in map1.values) if (v == 'Present') totalPresent++;
+                                for (var v in map2.values) if (v == 'Present') totalPresent++;
+
+                                return Container(
+                                  padding: const EdgeInsets.symmetric(vertical: 8),
+                                  decoration: BoxDecoration(
+                                    border: Border(bottom: BorderSide(color: Colors.grey[300]!, width: 0.5)),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      SizedBox(
+                                        width: 150,
+                                        child: Padding(
+                                          padding: const EdgeInsets.only(left: 12),
+                                          child: Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              Flexible(
+                                                child: Text(
+                                                  driver['name'] ?? 'Unknown',
+                                                  style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                                                  overflow: TextOverflow.ellipsis,
+                                                ),
+                                              ),
+                                              const SizedBox(width: 4),
+                                              Container(
+                                                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                                                decoration: BoxDecoration(
+                                                  color: (type == 'Monthly' ? Colors.blue : Colors.orange).withValues(alpha: 0.15),
+                                                  borderRadius: BorderRadius.circular(4),
+                                                ),
+                                                child: Text(
+                                                  type == 'Monthly' ? 'M' : 'D',
+                                                  style: TextStyle(
+                                                    fontSize: 9,
+                                                    fontWeight: FontWeight.bold,
+                                                    color: type == 'Monthly' ? Colors.blue[800] : Colors.orange[900],
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                      SizedBox(
+                                        width: 45,
+                                        child: Center(
+                                          child: Text(
+                                            totalPresent.toString(),
+                                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                                          ),
+                                        ),
+                                      ),
+                                      ...List.generate(daysInMonth, (index) {
+                                        final day = index + 1;
+                                        final s1 = map1[day];
+                                        final s2 = map2[day];
+                                        int daily = 0;
+                                        if (s1 == 'Present') daily++;
+                                        if (s2 == 'Present') daily++;
+
+                                        return SizedBox(
+                                          width: 32,
+                                          child: Center(
+                                            child: daily > 0 
+                                              ? Text(daily.toString(), style: const TextStyle(color: Colors.green, fontWeight: FontWeight.bold, fontSize: 13))
+                                              : (s1 == 'Absent' || s2 == 'Absent') 
+                                                ? const Icon(Icons.close, size: 14, color: Colors.red)
+                                                : const Text('-', style: TextStyle(color: Colors.grey)),
+                                          ),
+                                        );
+                                      }),
+                                    ],
+                                  ),
+                                );
+                              }).toList(),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
           ),

@@ -582,60 +582,104 @@ class _CustomerLedgerScreenState extends State<CustomerLedgerScreen> with Single
     final amountController = TextEditingController(text: data.parseAmount(item['amount']).toInt().toString());
     final notesController = TextEditingController(text: item['description'] ?? '');
     
+    DateTime selectedEditDate = DateTime.now();
+    if (item['date'] != null) {
+      try {
+        selectedEditDate = DateFormat('dd MMM yyyy').parse(item['date']);
+      } catch (_) {}
+    }
+
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Edit Payment'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: amountController,
-              decoration: const InputDecoration(labelText: 'Amount (₹)', border: OutlineInputBorder()),
-              keyboardType: TextInputType.number,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          return AlertDialog(
+            title: const Text('Edit Payment'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                TextField(
+                  controller: amountController,
+                  decoration: const InputDecoration(labelText: 'Amount (₹)', border: OutlineInputBorder(), isDense: true),
+                  keyboardType: TextInputType.number,
+                ),
+                const SizedBox(height: 12),
+                InkWell(
+                  onTap: () async {
+                    final picked = await showDatePicker(
+                      context: context,
+                      initialDate: selectedEditDate,
+                      firstDate: DateTime(2020),
+                      lastDate: DateTime(2030),
+                    );
+                    if (picked != null) {
+                      setDialogState(() {
+                        selectedEditDate = picked;
+                      });
+                    }
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                    decoration: BoxDecoration(
+                      border: Border.all(color: Colors.grey),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text('Date: ${DateFormat('dd MMM yyyy').format(selectedEditDate)}', style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                        const Icon(Icons.calendar_today, size: 18, color: JarvisTheme.primary),
+                      ],
+                    ),
+                  ),
+                ),
+                if (type == 'CustomerPayment') ...[
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: notesController,
+                    decoration: const InputDecoration(labelText: 'Description', border: OutlineInputBorder(), isDense: true),
+                    maxLines: 2,
+                  ),
+                ]
+              ],
             ),
-            if (type == 'CustomerPayment') ...[
-              const SizedBox(height: 16),
-              TextField(
-                controller: notesController,
-                decoration: const InputDecoration(labelText: 'Description', border: OutlineInputBorder()),
-                maxLines: 2,
+            actions: [
+              if (type == 'CustomerPayment') 
+                TextButton(
+                  onPressed: () async {
+                    await data.deleteCustomerPayment(id);
+                    Navigator.pop(context);
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Payment Deleted')));
+                  }, 
+                  child: const Text('DELETE', style: TextStyle(color: Colors.red))
+                ),
+              TextButton(onPressed: () => Navigator.pop(context), child: const Text('CANCEL')),
+              ElevatedButton(
+                onPressed: () async {
+                  final amt = double.tryParse(amountController.text);
+                  if (amt == null) return;
+                  final dateStr = DateFormat('dd MMM yyyy').format(selectedEditDate);
+                  
+                  if (type == 'CustomerPayment') {
+                    await data.updateCustomerPayment(id, {
+                      'amount': '₹${amt.toInt()}',
+                      'notes': notesController.text,
+                      'date': dateStr,
+                    });
+                  } else if (type == 'Income') {
+                    await data.updateIncomePayment(id, {'amount': '₹${amt.toInt()}', 'date': dateStr});
+                  } else if (type == 'Payment') {
+                    await data.updateVehiclePayment(id, {'amount': '₹${amt.toInt()}', 'date': dateStr});
+                  }
+                  Navigator.pop(context);
+                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Payment Updated')));
+                },
+                child: const Text('UPDATE'),
               ),
-            ]
-          ],
-        ),
-        actions: [
-          if (type == 'CustomerPayment') 
-            TextButton(
-              onPressed: () async {
-                await data.deleteCustomerPayment(id);
-                Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Payment Deleted')));
-              }, 
-              child: const Text('DELETE', style: TextStyle(color: Colors.red))
-            ),
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('CANCEL')),
-          ElevatedButton(
-            onPressed: () async {
-              final amt = double.tryParse(amountController.text);
-              if (amt == null) return;
-              
-              if (type == 'CustomerPayment') {
-                await data.updateCustomerPayment(id, {
-                  'amount': '₹${amt.toInt()}',
-                  'notes': notesController.text,
-                });
-              } else if (type == 'Income') {
-                await data.updateIncomePayment(id, {'amount': '₹${amt.toInt()}'});
-              } else if (type == 'Payment') {
-                await data.updateVehiclePayment(id, {'amount': '₹${amt.toInt()}'});
-              }
-              Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Payment Updated')));
-            },
-            child: const Text('UPDATE'),
-          ),
-        ],
+            ],
+          );
+        },
       ),
     );
   }
@@ -668,12 +712,16 @@ class _CustomerLedgerScreenState extends State<CustomerLedgerScreen> with Single
              } catch (_) { return 0; }
           });
 
-          // Fetch Customer Address
-          final customerObj = data.customers.firstWhere((c) => c['name'] == widget.customerName, orElse: () => {});
+          // Fetch Customer Address & Phone
+          final customerObj = data.customers.firstWhere(
+            (c) => c['name']?.toString().trim().toLowerCase() == widget.customerName.trim().toLowerCase(),
+            orElse: () => {},
+          );
           String customerAddress = (customerObj['address'] ?? '').toString().trim();
           if (customerAddress.isEmpty) {
             customerAddress = 'Sangampalayam'; // Default sample address if not set
           }
+          String customerPhone = (customerObj['phone'] ?? customerObj['mobile'] ?? customerObj['contact'] ?? customerObj['phone_no'] ?? '').toString().trim();
 
           // Build 9-Column Customer Statement Rows:
           // S.No | Date | Vehicle Details | Rate type | Hours/Day | Rate | Bata | Material | Amount
@@ -740,11 +788,17 @@ class _CustomerLedgerScreenState extends State<CustomerLedgerScreen> with Single
                totalBataInRange += bVal;
                String bataStr = bVal > 0 ? bVal.toInt().toString() : '-';
 
-               String matName = (item['material_name'] ?? item['material'] ?? item['particulars'] ?? '').toString().trim();
+               String matName = (item['material_name'] ?? item['material'] ?? item['supplier_material'] ?? '').toString().trim();
                if (matName == vType || matName == rawNo || matName == vehicleDetailsStr || matName == '0') {
                   matName = '';
                }
                String materialStr = matName.isNotEmpty ? matName : '-';
+
+               String userDesc = (item['manual_desc'] ?? item['description'] ?? item['notes'] ?? item['desc'] ?? item['remarks'] ?? '').toString().trim();
+               if (userDesc == vType || userDesc == rawNo || userDesc == vehicleDetailsStr || userDesc == '0') {
+                  userDesc = '';
+               }
+               String descriptionStr = userDesc.isNotEmpty ? userDesc : '-';
 
                double calcVal = 0;
                if (duration > 0 && rate > 0) {
@@ -771,6 +825,7 @@ class _CustomerLedgerScreenState extends State<CustomerLedgerScreen> with Single
                    rateStr,
                    bataStr,
                    materialStr,
+                   descriptionStr,
                    amountStr,
                ]);
           }
@@ -818,6 +873,7 @@ class _CustomerLedgerScreenState extends State<CustomerLedgerScreen> with Single
              await ExcelService.generateCustomerAccountStatementExcel(
                 customerName: widget.customerName,
                 customerAddress: customerAddress,
+                customerPhone: customerPhone,
                 dataRows: statementRows,
                 totals: totals,
                 paymentRows: paymentStatementRows,
@@ -832,6 +888,7 @@ class _CustomerLedgerScreenState extends State<CustomerLedgerScreen> with Single
              final file = await PdfService.getCustomerAccountStatementPdfFile(
                 customerName: widget.customerName,
                 customerAddress: customerAddress,
+                customerPhone: customerPhone,
                 dataRows: statementRows,
                 totals: totals,
                 paymentRows: paymentStatementRows,
@@ -839,7 +896,7 @@ class _CustomerLedgerScreenState extends State<CustomerLedgerScreen> with Single
              );
 
              String textSummary = "*CUSTOMER ACCOUNT STATEMENT*\n*Customer: ${widget.customerName} ($customerAddress)*\n\n";
-             textSummary += "S.No | Date | Vehicle | Rate type | Hours/Day | Rate | Bata | Material | Amount\n";
+             textSummary += "S.No | Date | Vehicle | Rate type | Hours/Day | Rate | Bata | Material | Description | Amount\n";
              for (var r in statementRows.take(20)) {
                 textSummary += r.join(' | ') + '\n';
              }
@@ -850,6 +907,7 @@ class _CustomerLedgerScreenState extends State<CustomerLedgerScreen> with Single
              await PdfService.saveCustomerAccountStatementPdf(
                 customerName: widget.customerName,
                 customerAddress: customerAddress,
+                customerPhone: customerPhone,
                 dataRows: statementRows,
                 totals: totals,
                 paymentRows: paymentStatementRows,
@@ -859,6 +917,7 @@ class _CustomerLedgerScreenState extends State<CustomerLedgerScreen> with Single
              await PdfService.generateCustomerAccountStatementPdf(
                 customerName: widget.customerName,
                 customerAddress: customerAddress,
+                customerPhone: customerPhone,
                 dataRows: statementRows,
                 totals: totals,
                 paymentRows: paymentStatementRows,

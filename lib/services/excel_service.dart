@@ -75,6 +75,7 @@ class ExcelService {
   static Future<void> generateCustomerAccountStatementExcel({
     required String customerName,
     required String customerAddress,
+    String? customerPhone,
     required List<List<String>> dataRows,
     required Map<String, String> totals,
     List<List<String>>? paymentRows,
@@ -94,7 +95,11 @@ class ExcelService {
 
     // Customer Name Banner Row (Top of Excel Sheet - No business logo/header above)
     var cellBanner = sheetObject.cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: rowIndex));
-    cellBanner.value = TextCellValue(customerAddress.isNotEmpty ? 'To: $customerName, $customerAddress' : 'To: $customerName');
+    String bannerStr = customerAddress.isNotEmpty ? 'To: $customerName, $customerAddress' : 'To: $customerName';
+    if (customerPhone != null && customerPhone.isNotEmpty) {
+      bannerStr += ' (Ph: $customerPhone)';
+    }
+    cellBanner.value = TextCellValue(bannerStr);
     cellBanner.cellStyle = subHeaderStyle;
     rowIndex += 2;
 

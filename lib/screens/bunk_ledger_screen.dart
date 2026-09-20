@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../theme.dart';
@@ -93,6 +94,11 @@ class _BunkLedgerScreenState extends State<BunkLedgerScreen> with SingleTickerPr
                   onPressed: () => _generateExcel(context, Provider.of<DataProvider>(context, listen: false)),
                   tooltip: 'Export as Excel',
               ),
+              IconButton(
+                  icon: const Icon(Icons.content_copy),
+                  onPressed: () => _copyLedgerToClipboard(context, Provider.of<DataProvider>(context, listen: false)),
+                  tooltip: 'Copy to Clipboard',
+              ),
               const DevBrandingBadge(),
             ],
             bottom: TabBar(
@@ -173,6 +179,34 @@ class _BunkLedgerScreenState extends State<BunkLedgerScreen> with SingleTickerPr
     );
   }
 
+  Map<String, Map<String, dynamic>> _calculateMaterialSummary(List<Map<String, dynamic>> items) {
+    final Map<String, Map<String, dynamic>> summary = {};
+    for (var item in items) {
+      String matName = (item['material_name'] ?? '').toString().trim();
+      if (matName.isEmpty) {
+        String title = (item['title'] ?? item['description'] ?? '').toString();
+        if (title.contains(':')) {
+          matName = title.split(':').first.trim();
+        }
+      }
+      if (matName.isEmpty) continue;
+
+      double qty = double.tryParse((item['quantity'] ?? '0').toString().replaceAll(RegExp(r'[^0-9.]'), '')) ?? 0.0;
+      String unit = (item['unit'] ?? '').toString().trim();
+
+      String key = '${matName.toLowerCase()}||${unit.toLowerCase()}';
+      if (!summary.containsKey(key)) {
+        summary[key] = {
+          'name': matName,
+          'quantity': 0.0,
+          'unit': unit,
+        };
+      }
+      summary[key]!['quantity'] += qty;
+    }
+    return summary;
+  }
+
   Widget _buildBillsList(List<Map<String, dynamic>> items, DataProvider data) {
     if (items.isEmpty) {
       return Center(
@@ -192,6 +226,8 @@ class _BunkLedgerScreenState extends State<BunkLedgerScreen> with SingleTickerPr
        totalAmount += data.parseAmount(item['bill_amount']);
     }
 
+    final matSummary = _calculateMaterialSummary(items);
+
     return Column(
       children: [
         Container(
@@ -206,6 +242,54 @@ class _BunkLedgerScreenState extends State<BunkLedgerScreen> with SingleTickerPr
              ],
            ),
         ),
+        if (matSummary.isNotEmpty) ...[
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: Colors.blue.shade50,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.blue.shade200),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.inventory_2, size: 16, color: Colors.blue.shade800),
+                    const SizedBox(width: 6),
+                    Text(
+                      'MATERIAL SUMMARY',
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11, color: Colors.blue.shade900),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 6,
+                  children: matSummary.values.map((mat) {
+                    double qty = mat['quantity'];
+                    String qtyStr = (qty % 1 == 0) ? qty.toInt().toString() : qty.toStringAsFixed(1);
+                    return Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(color: Colors.blue.shade200),
+                      ),
+                      child: Text(
+                        '${mat['name']}: $qtyStr ${mat['unit']}'.trim(),
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.black87),
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ],
+            ),
+          ),
+        ],
         Divider(height: 1, color: Colors.grey[300]),
         Expanded(
           child: ListView.builder(
@@ -305,6 +389,7 @@ class _BunkLedgerScreenState extends State<BunkLedgerScreen> with SingleTickerPr
 
   void _showAddPaymentDialog(BuildContext context) {
      final controller = TextEditingController();
+     final descController = TextEditingController();
      DateTime selectedDate = DateTime.now();
      bool isDiscount = false;
 
@@ -325,6 +410,14 @@ class _BunkLedgerScreenState extends State<BunkLedgerScreen> with SingleTickerPr
                 ),
                 keyboardType: TextInputType.number,
                 autofocus: true,
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: descController,
+                decoration: const InputDecoration(
+                  labelText: 'Description / Notes (Optional)',
+                  border: OutlineInputBorder(),
+                ),
               ),
               const SizedBox(height: 16),
               Row(
@@ -372,12 +465,13 @@ class _BunkLedgerScreenState extends State<BunkLedgerScreen> with SingleTickerPr
                  Navigator.pop(context);
 
                  try {
+                    String customNotes = descController.text.trim();
                     await data.recordSupplierPayment(
                       widget.supplierId,
                       amount,
                       DateFormat('dd MMM yyyy').format(selectedDate),
                       isDiscount: isDiscount,
-                      notes: isDiscount ? 'Discount Allowed' : 'Payment Made',
+                      notes: customNotes.isNotEmpty ? customNotes : (isDiscount ? 'Discount Allowed' : 'Payment Made'),
                     );
                     if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(isDiscount ? 'Discount Recorded' : 'Payment Recorded')));
                  } catch (e) {
@@ -466,6 +560,18 @@ class _BunkLedgerScreenState extends State<BunkLedgerScreen> with SingleTickerPr
             finalRows.addAll(billRows);
             finalRows.add(['', '', '', '']);
           }
+
+          final matPdfSummary = _calculateMaterialSummary(filteredBills);
+          if (matPdfSummary.isNotEmpty) {
+            finalRows.add(['--- SUMMARY ---', '', '', '']);
+            for (var mat in matPdfSummary.values) {
+              double qty = mat['quantity'];
+              String qtyStr = (qty % 1 == 0) ? qty.toInt().toString() : qty.toStringAsFixed(1);
+              finalRows.add(['Summary', mat['name'], '$qtyStr ${mat['unit']}'.trim(), '-']);
+            }
+            finalRows.add(['', '', '', '']);
+          }
+
           if (paymentRows.isNotEmpty) {
             finalRows.add(['--- PAYMENTS ---', '', '', '']);
             finalRows.addAll(paymentRows);
@@ -577,6 +683,18 @@ class _BunkLedgerScreenState extends State<BunkLedgerScreen> with SingleTickerPr
             finalRows.addAll(billRows);
             finalRows.add(['', '', '', '']);
           }
+
+          final matExcelSummary = _calculateMaterialSummary(filteredBills);
+          if (matExcelSummary.isNotEmpty) {
+            finalRows.add(['--- SUMMARY ---', '', '', '']);
+            for (var mat in matExcelSummary.values) {
+              double qty = mat['quantity'];
+              String qtyStr = (qty % 1 == 0) ? qty.toInt().toString() : qty.toStringAsFixed(1);
+              finalRows.add(['Summary', mat['name'], '$qtyStr ${mat['unit']}'.trim(), '-']);
+            }
+            finalRows.add(['', '', '', '']);
+          }
+
           if (paymentRows.isNotEmpty) {
             finalRows.add(['--- PAYMENTS ---', '', '', '']);
             finalRows.addAll(paymentRows);
@@ -603,6 +721,120 @@ class _BunkLedgerScreenState extends State<BunkLedgerScreen> with SingleTickerPr
 
       } catch (e) {
           if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+      }
+  }
+
+  Future<void> _copyLedgerToClipboard(BuildContext context, DataProvider data) async {
+      try {
+          final ledgerData = await data.getBunkLedgerCategorized(widget.supplierName);
+          final filteredBills = ledgerData['all_bills']!.where((item) => _isDateInRange(item['date'])).toList();
+          final filteredPayments = ledgerData['paid']!.where((item) => _isDateInRange(item['date'])).toList();
+
+          filteredBills.sort((a, b) {
+             try {
+                DateTime da = DateFormat('dd MMM yyyy').parse(a['date']);
+                DateTime db = DateFormat('dd MMM yyyy').parse(b['date']);
+                return da.compareTo(db);
+             } catch(_) { return 0; }
+          });
+          filteredPayments.sort((a, b) {
+             try {
+                DateTime da = DateFormat('dd MMM yyyy').parse(a['date']);
+                DateTime db = DateFormat('dd MMM yyyy').parse(b['date']);
+                return da.compareTo(db);
+             } catch(_) { return 0; }
+          });
+
+          final List<List<String>> billRows = [];
+          double totalBilledInRange = 0;
+          for (var item in filteredBills) {
+               String qtyDisplay = '';
+               if (item['material_name'] != null && item['material_name'].toString().isNotEmpty) {
+                  qtyDisplay = '${item['material_name']}';
+                  if (item['quantity'] != null && item['quantity'].toString().isNotEmpty && item['quantity'].toString() != '0') {
+                     qtyDisplay += ' - ${item['quantity']} ${item['unit'] ?? ''}';
+                  }
+               } else if (item['quantity'] != null && item['quantity'].toString().isNotEmpty) {
+                  qtyDisplay = '${item['quantity']} ${item['unit'] ?? ''}';
+               } else {
+                  qtyDisplay = item['material_name'] ?? '';
+               }
+
+               double amt = data.parseAmount(item['bill_amount']);
+               totalBilledInRange += amt;
+
+               billRows.add([
+                   item['date'] ?? '',
+                   item['vehicle_no'] != null && item['vehicle_no'].toString().isNotEmpty
+                        ? item['vehicle_no']
+                        : (item['description'] ?? 'Expense'),
+                   qtyDisplay,
+                   'Rs. ${amt.toInt()}'
+               ]);
+          }
+
+          final List<List<String>> paymentRows = [];
+          double totalPaidInRange = 0;
+          for (var item in filteredPayments) {
+               double amt = data.parseAmount(item['amount']);
+               totalPaidInRange += amt;
+               paymentRows.add([
+                   item['date'] ?? '',
+                   item['type'] ?? 'Payment',
+                   item['description'] ?? (item['title'] ?? ''),
+                   'Rs. ${amt.toInt()}'
+               ]);
+          }
+
+          final List<List<String>> finalRows = [];
+          if (billRows.isNotEmpty) {
+            finalRows.add(['--- BILLS ---', '', '', '']);
+            finalRows.addAll(billRows);
+            finalRows.add(['', '', '', '']);
+          }
+
+          final matPdfSummary = _calculateMaterialSummary(filteredBills);
+          if (matPdfSummary.isNotEmpty) {
+            finalRows.add(['--- SUMMARY ---', '', '', '']);
+            for (var mat in matPdfSummary.values) {
+              double qty = mat['quantity'];
+              String qtyStr = (qty % 1 == 0) ? qty.toInt().toString() : qty.toStringAsFixed(1);
+              finalRows.add(['Summary', mat['name'], '$qtyStr ${mat['unit']}'.trim(), '-']);
+            }
+            finalRows.add(['', '', '', '']);
+          }
+
+          if (paymentRows.isNotEmpty) {
+            finalRows.add(['--- PAYMENTS ---', '', '', '']);
+            finalRows.addAll(paymentRows);
+          }
+
+          final Map<String, String> totals = {
+             'Total Billed': 'Rs. ${totalBilledInRange.toInt()}',
+             'Total Paid': 'Rs. ${totalPaidInRange.toInt()}',
+             'Balance': 'Rs. ${(totalBilledInRange - totalPaidInRange).toInt()}',
+          };
+
+          final businessName = await data.getSetting('business_name');
+          final logoPath = await data.getLogoPath();
+
+          final pdfFile = await PdfService.getLedgerPdfFile(
+             title: '${widget.supplierName} Ledger',
+             subTitle: 'Bills & Payments Statement',
+             headers: ['Date', 'Description', 'Qty', 'Amount'],
+             data: finalRows,
+             totals: totals,
+             businessName: businessName,
+             logoPath: logoPath,
+          );
+
+          await PdfService.copyPdfFileToClipboard(pdfFile);
+
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('📋 PDF file copied to clipboard! Press Ctrl+V to paste.')));
+          }
+      } catch (e) {
+          if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error copying PDF: $e')));
       }
   }
 
@@ -693,6 +925,11 @@ class _BunkLedgerScreenState extends State<BunkLedgerScreen> with SingleTickerPr
       return;
     }
     final amountController = TextEditingController(text: data.parseAmount(item['amount']).toInt().toString());
+    final descController = TextEditingController(text: item['notes'] ?? item['description'] ?? '');
+    DateTime selectedDate = DateTime.now();
+    if (item['date'] != null) {
+      try { selectedDate = DateFormat('dd MMM yyyy').parse(item['date']); } catch (_) {}
+    }
 
     Future<bool> confirmDelete() async {
       return await showDialog<bool>(
@@ -710,63 +947,95 @@ class _BunkLedgerScreenState extends State<BunkLedgerScreen> with SingleTickerPr
 
     showDialog(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Edit Payment'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (item['description'] != null && item['description'].toString().isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: Text(item['description'], style: const TextStyle(color: Colors.grey, fontSize: 12)),
-              ),
-            TextField(
-              controller: amountController,
-              decoration: const InputDecoration(labelText: 'Amount (₹)', border: OutlineInputBorder()),
-              keyboardType: TextInputType.number,
-              autofocus: true,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setState) => AlertDialog(
+          title: const Text('Edit Payment'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: amountController,
+                  decoration: const InputDecoration(labelText: 'Amount (₹)', border: OutlineInputBorder()),
+                  keyboardType: TextInputType.number,
+                  autofocus: true,
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        'Date: ${DateFormat('dd MMM yyyy').format(selectedDate)}',
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.calendar_today),
+                      onPressed: () async {
+                        final picked = await showDatePicker(
+                          context: context,
+                          initialDate: selectedDate,
+                          firstDate: DateTime(2020),
+                          lastDate: DateTime(2030),
+                        );
+                        if (picked != null) {
+                          setState(() => selectedDate = picked);
+                        }
+                      },
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: descController,
+                  decoration: const InputDecoration(labelText: 'Description / Notes', border: OutlineInputBorder()),
+                  maxLines: 2,
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () async {
+                Navigator.pop(dialogContext);
+                final ok = await confirmDelete();
+                if (!ok) return;
+                if (subType == 'initial_paid') {
+                  await data.updateExpense(id, {'paid': '₹0'});
+                } else if (subType == 'sub_payment') {
+                  await data.deleteExpenseSubPayment(id);
+                } else {
+                  await data.deleteSupplierPayment(id);
+                }
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Payment Deleted')));
+                }
+              },
+              child: const Text('DELETE', style: TextStyle(color: Colors.red)),
+            ),
+            TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('CANCEL')),
+            ElevatedButton(
+              onPressed: () async {
+                final amt = double.tryParse(amountController.text);
+                if (amt == null) return;
+                Navigator.pop(dialogContext);
+                final formattedDate = DateFormat('dd MMM yyyy').format(selectedDate);
+                final newDesc = descController.text.trim();
+                if (subType == 'initial_paid') {
+                  await data.updateExpense(id, {'paid': '₹${amt.toInt()}', 'date': formattedDate, 'title': newDesc});
+                } else if (subType == 'sub_payment') {
+                  await data.updateExpenseSubPayment(id, {'amount': '₹${amt.toInt()}', 'date': formattedDate, 'notes': newDesc});
+                } else {
+                  await data.updateSupplierPayment(id, {'amount': '₹${amt.toInt()}', 'date': formattedDate, 'notes': newDesc});
+                }
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Payment Updated')));
+                }
+              },
+              child: const Text('UPDATE'),
             ),
           ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () async {
-              Navigator.pop(dialogContext);
-              final ok = await confirmDelete();
-              if (!ok) return;
-              if (subType == 'initial_paid') {
-                await data.updateExpense(id, {'paid': '₹0'});
-              } else if (subType == 'sub_payment') {
-                await data.deleteExpenseSubPayment(id);
-              } else {
-                await data.deleteSupplierPayment(id);
-              }
-              if (context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Payment Deleted')));
-              }
-            },
-            child: const Text('DELETE', style: TextStyle(color: Colors.red)),
-          ),
-          TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('CANCEL')),
-          ElevatedButton(
-            onPressed: () async {
-              final amt = double.tryParse(amountController.text);
-              if (amt == null) return;
-              Navigator.pop(dialogContext);
-              if (subType == 'initial_paid') {
-                await data.updateExpense(id, {'paid': '₹${amt.toInt()}'});
-              } else if (subType == 'sub_payment') {
-                await data.updateExpenseSubPayment(id, {'amount': '₹${amt.toInt()}'});
-              } else {
-                await data.updateSupplierPayment(id, {'amount': '₹${amt.toInt()}'});
-              }
-              if (context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Payment Updated')));
-              }
-            },
-            child: const Text('UPDATE'),
-          ),
-        ],
       ),
     );
   }

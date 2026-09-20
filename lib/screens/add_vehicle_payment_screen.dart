@@ -64,6 +64,46 @@ class _AddVehiclePaymentScreenState extends State<AddVehiclePaymentScreen> {
   bool _isEditing = false;
   String? _editingId;
   bool _isOwnSite = false; // Toggle state for Own Site vs Customer (Req 3)
+  bool _isAmountManuallyEdited = false;
+  int _resetCounter = 0;
+
+  void _resetFormForNewEntry() {
+    setState(() {
+      _resetCounter++;
+      _isEditing = false;
+      _editingId = null;
+      _isAmountManuallyEdited = false;
+
+      numberController.clear();
+      typeController.clear();
+      billNoController.clear();
+      durationController.clear();
+      rateController.clear();
+      battaController.clear();
+      totalController.clear();
+      paidController.clear();
+      driverController.clear();
+      descriptionController.clear();
+      supplierController.clear();
+      materialNameController.clear();
+      quantityController.clear();
+      materialPriceController.clear();
+      materialAmountController.clear();
+      grandTotalController.clear();
+
+      selectedSupplier = null;
+      _selectedMaterialItem = null;
+      _supplierMaterials = [];
+      selectedRegistryId = null;
+      vehicleRates = {};
+      availableRateTypes = [];
+      currentRateType = 'Day';
+
+      selectedCustomer = widget.initialCustomer;
+      customerController.text = selectedCustomer ?? '';
+      selectedSite = widget.initialSite;
+    });
+  }
 
   @override
   void initState() {
@@ -73,6 +113,7 @@ class _AddVehiclePaymentScreenState extends State<AddVehiclePaymentScreen> {
     if (v != null) {
       _isEditing = true;
       _editingId = v['id'];
+      _isAmountManuallyEdited = true;
     }
 
     numberController = TextEditingController(text: v != null ? v['number'] : (widget.initialVehicleNo ?? ''));
@@ -292,7 +333,7 @@ class _AddVehiclePaymentScreenState extends State<AddVehiclePaymentScreen> {
     }
   }
 
-  void _autoSelectVehicle(String number) {
+  void _autoSelectVehicle(String number, {bool isManualSelection = false}) {
      final data = Provider.of<DataProvider>(context, listen: false);
      try {
        final reg = data.vehicleRegistry.firstWhere(
@@ -317,13 +358,17 @@ class _AddVehiclePaymentScreenState extends State<AddVehiclePaymentScreen> {
 
          if (rates.isNotEmpty) {
             availableRateTypes = rates.keys.toList();
-            String firstKey = rates.keys.first;
-            currentRateType = firstKey[0].toUpperCase() + firstKey.substring(1).toLowerCase();
-            rateController.text = rates[firstKey].toString();
-            _calculateTotal();
+            if (isManualSelection || (!_isEditing && rateController.text.isEmpty)) {
+              String firstKey = rates.keys.first;
+              currentRateType = firstKey[0].toUpperCase() + firstKey.substring(1).toLowerCase();
+              rateController.text = rates[firstKey].toString();
+              _calculateTotal();
+            }
          } else {
             availableRateTypes = []; // Reset to show all defaults if no config
-            currentRateType = 'Day';
+            if (isManualSelection || !_isEditing) {
+              currentRateType = 'Day';
+            }
             vehicleRates = {};
          }
        });
@@ -424,6 +469,10 @@ class _AddVehiclePaymentScreenState extends State<AddVehiclePaymentScreen> {
   }
 
   void _calculateTotal() {
+    if (_isAmountManuallyEdited) {
+      _syncGrandTotal();
+      return;
+    }
     final duration = double.tryParse(durationController.text) ?? 1.0;
     final rate = double.tryParse(rateController.text) ?? 0.0;
     final batta = double.tryParse(battaController.text) ?? 0.0;
@@ -431,9 +480,15 @@ class _AddVehiclePaymentScreenState extends State<AddVehiclePaymentScreen> {
     setState(() {
       totalController.text = rentPlusBatta > 0 ? rentPlusBatta.toStringAsFixed(0) : '0';
     });
+    _syncGrandTotal();
   }
 
   void _onAmountEdited() {
+    if (!_isAmountManuallyEdited) {
+      setState(() {
+        _isAmountManuallyEdited = true;
+      });
+    }
     final duration = double.tryParse(durationController.text) ?? 1.0;
     final amount = double.tryParse(totalController.text) ?? 0.0;
     final batta = double.tryParse(battaController.text) ?? 0.0;
@@ -634,15 +689,17 @@ class _AddVehiclePaymentScreenState extends State<AddVehiclePaymentScreen> {
                           flex: 1,
                           child: Consumer<DataProvider>(
                             builder: (context, data, child) {
-                              final existingTypes = {
-                                ...data.vehicleRegistry.map((v) => (v['type'] ?? '').toString().trim()),
-                                ...data.vehicles.map((v) => (v['type'] ?? '').toString().trim()),
-                              }.where((t) => t.isNotEmpty).toList();
+                              final existingTypes = data.vehicleRegistry
+                                  .map((v) => (v['type'] ?? '').toString().trim())
+                                  .where((t) => t.isNotEmpty)
+                                  .toSet()
+                                  .toList();
                               final allTypes = existingTypes.isNotEmpty
                                   ? existingTypes
                                   : ['Lorry', 'JCB', 'Tractor', 'Hitachi', 'Tipper'];
 
                               return Autocomplete<String>(
+                                key: ValueKey('vtype_$_resetCounter'),
                                 textEditingController: typeController,
                                 focusNode: typeFocusNode,
                                 optionsBuilder: (TextEditingValue textEditingValue) {
@@ -653,7 +710,17 @@ class _AddVehiclePaymentScreenState extends State<AddVehiclePaymentScreen> {
                                   setState(() {
                                     typeController.text = selection;
                                     if (numberController.text.isNotEmpty) {
-                                      _checkAndAutoSelectVehicle(numberController.text);
+                                      final data = Provider.of<DataProvider>(context, listen: false);
+                                      final reg = data.vehicleRegistry.firstWhere(
+                                        (v) => (v['number'] ?? '').toString().trim().toLowerCase() == numberController.text.trim().toLowerCase(),
+                                        orElse: () => {},
+                                      );
+                                      if (reg.isNotEmpty && (reg['type'] ?? '').toString().trim().toLowerCase() != selection.trim().toLowerCase()) {
+                                        numberController.clear();
+                                        selectedRegistryId = null;
+                                      } else {
+                                        _checkAndAutoSelectVehicle(numberController.text);
+                                      }
                                     }
                                   });
                                 },
@@ -724,17 +791,6 @@ class _AddVehiclePaymentScreenState extends State<AddVehiclePaymentScreen> {
                                 }
                               }
 
-                              for (var v in data.vehicles) {
-                                final numStr = (v['number'] ?? v['vehicle_no'] ?? '').toString().trim();
-                                if (numStr.isNotEmpty && !numbersSeen.contains(numStr.toLowerCase())) {
-                                  numbersSeen.add(numStr.toLowerCase());
-                                  allAvailableVehicles.add({
-                                    'number': numStr,
-                                    'type': (v['type'] ?? v['vehicle_type'] ?? '').toString().trim(),
-                                  });
-                                }
-                              }
-
                               return Autocomplete<Map<String, dynamic>>(
                                 textEditingController: numberController,
                                 focusNode: numberFocusNode,
@@ -742,18 +798,21 @@ class _AddVehiclePaymentScreenState extends State<AddVehiclePaymentScreen> {
                                 optionsBuilder: (TextEditingValue textEditingValue) {
                                   final selectedType = typeController.text.trim().toLowerCase();
                                   Iterable<Map<String, dynamic>> matchingVehicles = allAvailableVehicles;
-                                  
+
                                   if (selectedType.isNotEmpty) {
                                     matchingVehicles = allAvailableVehicles.where((vehicle) {
                                       final vType = (vehicle['type'] ?? '').toString().toLowerCase().trim();
                                       if (vType.isEmpty) return false;
-                                      return vType == selectedType || vType.contains(selectedType) || selectedType.contains(vType);
+                                      return vType == selectedType;
                                     });
                                   }
 
                                   if (textEditingValue.text.isEmpty) return matchingVehicles;
-                                  final input = textEditingValue.text.toLowerCase();
-                                  return matchingVehicles.where((vehicle) => vehicle['number'].toString().toLowerCase().contains(input));
+                                  final input = textEditingValue.text.toLowerCase().trim();
+                                  return matchingVehicles.where((vehicle) {
+                                    final numStr = (vehicle['number'] ?? '').toString().toLowerCase();
+                                    return numStr.contains(input);
+                                  });
                                 },
                                 onSelected: (Map<String, dynamic> selection) {
                                   setState(() {
@@ -761,7 +820,7 @@ class _AddVehiclePaymentScreenState extends State<AddVehiclePaymentScreen> {
                                     if (selection['type'] != null && selection['type'].toString().isNotEmpty) {
                                       typeController.text = selection['type'].toString();
                                     }
-                                    _autoSelectVehicle(selection['number'].toString());
+                                    _autoSelectVehicle(selection['number'].toString(), isManualSelection: true);
                                   });
                                 },
                                 fieldViewBuilder: (context, controller, focusNode, onFieldSubmitted) {
@@ -826,25 +885,9 @@ class _AddVehiclePaymentScreenState extends State<AddVehiclePaymentScreen> {
                     ),
                     const SizedBox(height: 10),
 
-                    // ROW 3: [ Qunt ] | [ R-Type ] | [ Rate ] | [ Bata ]
+                    // ROW 3: [ R-Type ] | [ Qunt ] | [ Rate ] | [ Bata ]
                     Row(
                       children: [
-                        // Qunt
-                        Expanded(
-                          flex: 1,
-                          child: TextField(
-                            controller: durationController,
-                            decoration: const InputDecoration(
-                              labelText: 'Qunt',
-                              border: OutlineInputBorder(),
-                              isDense: true,
-                            ),
-                            keyboardType: TextInputType.number,
-                            onChanged: (_) => _calculateTotal(),
-                          ),
-                        ),
-                        const SizedBox(width: 6),
-
                         // R-Type
                         Expanded(
                           flex: 1,
@@ -880,7 +923,7 @@ class _AddVehiclePaymentScreenState extends State<AddVehiclePaymentScreen> {
                                 final Set<String> typeRates = {};
                                 for (var reg in data.vehicleRegistry) {
                                   final regType = (reg['type'] ?? '').toString().trim().toLowerCase();
-                                  if (regType == cleanType || regType.contains(cleanType) || cleanType.contains(regType)) {
+                                  if (regType == cleanType) {
                                     if (reg['rates'] != null) {
                                       try {
                                         Map<String, dynamic> r = jsonDecode(reg['rates']);
@@ -951,6 +994,22 @@ class _AddVehiclePaymentScreenState extends State<AddVehiclePaymentScreen> {
                         ),
                         const SizedBox(width: 6),
 
+                        // Qunt
+                        Expanded(
+                          flex: 1,
+                          child: TextField(
+                            controller: durationController,
+                            decoration: const InputDecoration(
+                              labelText: 'Qunt',
+                              border: OutlineInputBorder(),
+                              isDense: true,
+                            ),
+                            keyboardType: TextInputType.number,
+                            onChanged: (_) => _calculateTotal(),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+
                         // Rate
                         Expanded(
                           flex: 1,
@@ -993,10 +1052,28 @@ class _AddVehiclePaymentScreenState extends State<AddVehiclePaymentScreen> {
                           flex: 1,
                           child: TextField(
                             controller: totalController,
-                            decoration: const InputDecoration(
+                            decoration: InputDecoration(
                               labelText: 'Amount (₹)',
-                              border: OutlineInputBorder(),
+                              border: const OutlineInputBorder(),
                               isDense: true,
+                              suffixIcon: IconButton(
+                                icon: Icon(
+                                  _isAmountManuallyEdited ? Icons.edit_off : Icons.edit,
+                                  color: _isAmountManuallyEdited ? JarvisTheme.primary : Colors.grey,
+                                  size: 18,
+                                ),
+                                tooltip: _isAmountManuallyEdited
+                                    ? 'Manual amount active (Click to reset auto-calc)'
+                                    : 'Edit amount manually',
+                                onPressed: () {
+                                  setState(() {
+                                    _isAmountManuallyEdited = !_isAmountManuallyEdited;
+                                    if (!_isAmountManuallyEdited) {
+                                      _calculateTotal();
+                                    }
+                                  });
+                                },
+                              ),
                             ),
                             keyboardType: TextInputType.number,
                             onChanged: (_) => _onAmountEdited(),
@@ -1129,9 +1206,9 @@ class _AddVehiclePaymentScreenState extends State<AddVehiclePaymentScreen> {
                           flex: 2,
                           child: Consumer<DataProvider>(
                             builder: (context, data, _) {
-                              final List<String> supplierList = data.suppliers
+                              final List<String> supplierList = data.generalSuppliers
                                   .map((s) => (s['name'] ?? '').toString().trim())
-                                  .where((n) => n.isNotEmpty)
+                                  .where((name) => name.isNotEmpty)
                                   .toSet()
                                   .toList()..sort();
 
@@ -1506,36 +1583,21 @@ class _AddVehiclePaymentScreenState extends State<AddVehiclePaymentScreen> {
       }
     }
     if (andNew) {
-       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Entry Saved. Add another.')));
-       setState(() {
-          // Clear Amounts
-          totalController.clear();
-          paidController.clear();
-          materialAmountController.clear();
-          materialPriceController.clear();
-          quantityController.clear();
-          materialNameController.clear();
-          // Keep Site, Date, Vehicle (User usually adds multiple for same vehicle or same site? 
-          // Request said "multiple expense" likely for same vehicle. Let's keep Vehicle details.)
-          // Actually, usually "Add Another" means new blank entry for potentially different vehicle? 
-          // Let's clear Vehicle too to be safe, but keep Site/Date.
-          numberController.clear();
-          typeController.clear();
-          billNoController.clear();
-          rateController.clear();
-          battaController.clear();
-          driverController.clear();
-          descriptionController.clear();
-          selectedSupplier = null;
-          _selectedMaterialItem = null;
-          _supplierMaterials = [];
-          selectedRegistryId = null;
-          vehicleRates = {};
-          availableRateTypes = [];
-          currentRateType = 'Day';
-       });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Entry Saved. Add another.')));
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (context) => AddVehiclePaymentScreen(
+              isOwn: widget.isOwn,
+              initialCustomer: widget.initialCustomer,
+              initialSite: widget.initialSite,
+            ),
+          ),
+        );
+      }
     } else {
-       if (mounted) Navigator.pop(context);
+      if (mounted) Navigator.pop(context);
     }
   }
   double _parseAmount(dynamic value) {
@@ -1622,7 +1684,12 @@ class _AddVehiclePaymentScreenState extends State<AddVehiclePaymentScreen> {
     double material = _parseAmount(materialAmountController.text);
     double amount = total - material;
     String amountVal = amount >= 0 ? amount.toStringAsFixed(0) : '0';
-    if (totalController.text != amountVal) totalController.text = amountVal;
+    if (totalController.text != amountVal) {
+      totalController.text = amountVal;
+      if (!_isAmountManuallyEdited) {
+        _isAmountManuallyEdited = true;
+      }
+    }
     _isUpdatingInternally = false;
   }
 }

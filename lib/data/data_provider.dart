@@ -435,6 +435,105 @@ class DataProvider extends ChangeNotifier {
     }
   }
 
+  Future<bool> updateFuelIssue({
+    required dynamic issueId,
+    required String date,
+    required String vehicleNumber,
+    required String vehicleType,
+    required double liters,
+    String? driverName,
+    String? odometerHours,
+    String? notes,
+  }) async {
+    try {
+      final cleanIdStr = issueId.toString().replaceAll('EXP_TANK_', '');
+      final intId = int.tryParse(cleanIdStr);
+
+      Map<String, dynamic>? oldIssue;
+      if (intId != null) {
+        final issues = await _dbHelper.query('fuel_issues', where: 'id = ?', whereArgs: [intId]);
+        if (issues.isNotEmpty) {
+          oldIssue = issues.first;
+        }
+      }
+
+      double oldLiters = 0.0;
+      if (oldIssue != null) {
+        oldLiters = (oldIssue['liters'] as num?)?.toDouble() ?? 0.0;
+      } else {
+        final expId = 'EXP_TANK_$cleanIdStr';
+        final expIndex = _siteExpenses.indexWhere((e) => e['id']?.toString() == expId || e['id']?.toString() == issueId.toString());
+        if (expIndex != -1) {
+          final exp = _siteExpenses[expIndex];
+          oldLiters = double.tryParse(exp['liters']?.toString() ?? exp['quantity']?.toString() ?? '0') ?? 0.0;
+        }
+      }
+
+      final double availableStock = _mainTankLiters + oldLiters;
+      if (availableStock < liters) {
+        return false;
+      }
+
+      final double newTankLiters = availableStock - liters;
+      final tanks = await _dbHelper.query('fuel_tanks');
+      if (tanks.isNotEmpty) {
+        final tankId = tanks.first['id'];
+        await _dbHelper.update('fuel_tanks', {'current_liters': newTankLiters}, 'id', tankId.toString());
+      }
+      _mainTankLiters = newTankLiters;
+
+      if (intId != null && oldIssue != null) {
+        final issueMap = {
+          'date': date,
+          'vehicle_number': vehicleNumber,
+          'vehicle_type': vehicleType,
+          'liters': liters,
+          'driver_name': driverName ?? '',
+          'odometer_hours': odometerHours ?? '',
+          'notes': notes ?? '',
+        };
+        await _dbHelper.update('fuel_issues', issueMap, 'id', intId.toString());
+      }
+
+      double pricePerLiter = getAverageFuelPricePerLiter();
+      double calculatedVehicleCost = liters * pricePerLiter;
+      String descNote = notes != null && notes.isNotEmpty ? notes : 'Tank Fuel Issue';
+
+      final expId = 'EXP_TANK_${intId ?? cleanIdStr}';
+      final expenseUpdate = {
+        'id': expId,
+        'title': 'Fuel: Tank Dispense ($liters L @ ₹${pricePerLiter.toStringAsFixed(0)}/L)',
+        'category': 'Vehicle',
+        'site': '',
+        'amount': '₹${calculatedVehicleCost.toInt()}',
+        'paid': '₹${calculatedVehicleCost.toInt()}',
+        'date': date,
+        'supplier': 'Storage Tank',
+        'vehicle_no': vehicleNumber,
+        'quantity': liters.toString(),
+        'unit': 'Liters',
+        'liters': liters.toString(),
+        'material_name': descNote,
+      };
+
+      final expCheck = await _dbHelper.query('site_expenses', where: 'id = ?', whereArgs: [expId]);
+      if (expCheck.isNotEmpty) {
+        await _dbHelper.update('site_expenses', expenseUpdate, 'id', expId);
+      } else {
+        await _dbHelper.insert('site_expenses', expenseUpdate);
+      }
+
+      await _loadFromDB();
+      await fetchFuelTankData();
+      notifyListeners();
+      return true;
+    } catch (e, stack) {
+      debugPrint('Error updating fuel issue: $e\n$stack');
+      return false;
+    }
+  }
+
+
   Future<void> deleteFuelIssue(dynamic id) async {
     final intId = id is int ? id : int.tryParse(id.toString());
     try {
@@ -2633,6 +2732,76 @@ class DataProvider extends ChangeNotifier {
       }
       notifyListeners();
     }
+  }
+
+  Future<void> updateDriverPayment(
+    String paymentId, {
+    required String driverId,
+    required double amount,
+    required DateTime date,
+    String mode = 'Cash',
+    String? time,
+  }) async {
+    final index = _driverPayments.indexWhere((p) => p['id']?.toString() == paymentId.toString());
+    if (index == -1) return;
+
+    final oldPayment = _driverPayments[index];
+    final oldDriverId = oldPayment['driver_id']?.toString();
+    final oldAmount = parseAmount(oldPayment['amount']);
+    final oldMode = (oldPayment['mode'] ?? '').toString();
+    final isOldGiveAdv = oldMode == 'Give Advance' || oldMode == 'Advance' || oldMode.toLowerCase().contains('give advance');
+
+    final strDriverId = driverId.toString();
+    final cleanMode = mode.trim().isEmpty ? 'Cash' : mode.trim();
+    final isNewGiveAdv = cleanMode == 'Give Advance' || cleanMode == 'Advance' || cleanMode.toLowerCase().contains('give advance');
+
+    // Reverse old advance if it was Give Advance
+    if (isOldGiveAdv && oldDriverId != null) {
+      final dIndex = _drivers.indexWhere((d) => d['id'].toString() == oldDriverId.toString());
+      if (dIndex != -1) {
+        final driver = _drivers[dIndex];
+        final currentAdv = parseAmount(driver['advance_amount'] ?? driver['advance']);
+        final newAdv = (currentAdv - oldAmount) < 0 ? 0.0 : (currentAdv - oldAmount);
+        final formattedAdv = '₹${newAdv.toInt()}';
+        await _dbHelper.update('drivers', {'advance_amount': formattedAdv}, 'id', driver['id']);
+        _drivers[dIndex] = {...driver, 'advance_amount': formattedAdv};
+      }
+    }
+
+    // Apply new advance if it is Give Advance
+    if (isNewGiveAdv) {
+      final dIndex = _drivers.indexWhere((d) => d['id'].toString() == strDriverId.toString());
+      if (dIndex != -1) {
+        final driver = _drivers[dIndex];
+        final currentAdv = parseAmount(driver['advance_amount'] ?? driver['advance']);
+        final newAdv = currentAdv + amount;
+        final formattedAdv = '₹${newAdv.toInt()}';
+        await _dbHelper.update('drivers', {'advance_amount': formattedAdv}, 'id', driver['id']);
+        _drivers[dIndex] = {...driver, 'advance_amount': formattedAdv};
+      }
+    }
+
+    final timeStr = time ?? oldPayment['time'] ?? DateFormat('hh:mm a').format(DateTime.now());
+    final updatedPayment = {
+      ...oldPayment,
+      'driver_id': strDriverId,
+      'amount': '₹${amount.toInt()}',
+      'date': DateFormat('dd MMM yyyy').format(date),
+      'time': timeStr,
+      'mode': cleanMode,
+    };
+
+    await _dbHelper.update('driver_payments', updatedPayment, 'id', paymentId);
+    _driverPayments[index] = updatedPayment;
+
+    if (oldDriverId != null) {
+      await syncDriverBalanceById(oldDriverId);
+    }
+    if (strDriverId != oldDriverId) {
+      await syncDriverBalanceById(strDriverId);
+    }
+
+    notifyListeners();
   }
   
   Future<List<Map<String, dynamic>>> getDriverPayments(String id) async {

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../data/data_provider.dart';
 import '../theme.dart';
@@ -148,6 +149,64 @@ class _VehicleSummaryScreenState extends State<VehicleSummaryScreen> {
     }
   }
 
+  Future<void> _copySummaryToClipboard() async {
+    if (_summaryData.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No data to copy')));
+      return;
+    }
+
+    try {
+      final data = Provider.of<DataProvider>(context, listen: false);
+      final businessName = await data.getSetting('business_name');
+      final logoPath = await data.getLogoPath();
+
+      final range = data.selectedDateRange;
+      final dateStr = range != null 
+          ? '${DateFormat('dd MMM yyyy').format(range.start)} to ${DateFormat('dd MMM yyyy').format(range.end)}'
+          : 'All Time';
+
+      double totalIncome = 0;
+      double totalExpense = 0;
+      double totalNetProfit = 0;
+
+      final displayedData = _summaryData.where((v) => _selectedVehicles.contains(v['vehicle_no'])).toList();
+
+      for (var v in displayedData) {
+        totalIncome += (v['trip_income'] as num).toDouble();
+        totalExpense += (v['total_expense'] as num).toDouble();
+        totalNetProfit += (v['net_profit'] as num).toDouble();
+      }
+
+      Map<String, String> totalsMap = {
+        'Total Income': 'Rs. ${totalIncome.toStringAsFixed(0)}',
+        'Total Expenses': 'Rs. ${totalExpense.toStringAsFixed(0)}',
+        'Net Profit': 'Rs. ${totalNetProfit.toStringAsFixed(0)}',
+      };
+
+      final pdfFile = await PdfService.getDetailedVehicleSummaryPdfFile(
+        title: 'Vehicle Summary Report',
+        subTitle: _selectedVehicles.length == _summaryData.length 
+            ? 'Period: $dateStr' 
+            : 'Vehicles: ${_selectedVehicles.join(', ')} | Period: $dateStr',
+        summaryData: displayedData,
+        includeMaterialProfit: true,
+        totals: totalsMap,
+        businessName: businessName,
+        logoPath: logoPath,
+      );
+
+      await PdfService.copyPdfFileToClipboard(pdfFile);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('📋 PDF file copied to clipboard! Press Ctrl+V to paste.')));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error copying PDF: $e')));
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final data = Provider.of<DataProvider>(context);
@@ -186,7 +245,27 @@ class _VehicleSummaryScreenState extends State<VehicleSummaryScreen> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text('Date: $dateStr', style: const TextStyle(fontWeight: FontWeight.bold)),
+                  InkWell(
+                    onTap: () => data.selectDateRange(context),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        border: Border.all(color: JarvisTheme.primary.withValues(alpha: 0.4)),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.calendar_month, size: 16, color: JarvisTheme.primary),
+                          const SizedBox(width: 6),
+                          Text('Date: $dateStr', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                          const SizedBox(width: 6),
+                          const Icon(Icons.edit, size: 14, color: Colors.grey),
+                        ],
+                      ),
+                    ),
+                  ),
                   Row(
                     children: [
                       IconButton(
@@ -198,6 +277,11 @@ class _VehicleSummaryScreenState extends State<VehicleSummaryScreen> {
                         icon: const Icon(Icons.grid_on, color: Colors.green),
                         tooltip: 'Export Excel',
                         onPressed: _isLoading ? null : _generateExcelReport,
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.content_copy, color: JarvisTheme.primary),
+                        tooltip: 'Copy Summary to Clipboard',
+                        onPressed: _isLoading ? null : _copySummaryToClipboard,
                       ),
                       IconButton(
                         icon: const Icon(Icons.refresh, color: JarvisTheme.primary),

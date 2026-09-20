@@ -849,6 +849,20 @@ class PdfService {
     }
   }
 
+  static Future<bool> copyPdfFileToClipboard(File file) async {
+    try {
+      if (Platform.isWindows) {
+        final winPath = file.path.replaceAll('/', '\\');
+        final psCmd = "Add-Type -AssemblyName System.Windows.Forms; \$col = New-Object System.Collections.Specialized.StringCollection; \$col.Add('$winPath'); [System.Windows.Forms.Clipboard]::SetFileDropList(\$col)";
+        final res = await Process.run('powershell', ['-NoLogo', '-NoProfile', '-Command', psCmd]);
+        return res.exitCode == 0;
+      }
+      return false;
+    } catch (_) {
+      return false;
+    }
+  }
+
   static Future<void> showShareDialog(
     BuildContext context, 
     File file, {
@@ -908,7 +922,7 @@ class PdfService {
     return double.tryParse(clean) ?? 0;
   }
 
-  static Future<void> generateDetailedVehicleSummaryPdf({
+  static Future<Uint8List> generateDetailedVehicleSummaryBytes({
     required String title,
     required String subTitle,
     required List<Map<String, dynamic>> summaryData,
@@ -1255,9 +1269,52 @@ class PdfService {
       ),
     );
     
-    final bytes = await doc.save();
-    // Save to Documents\Jarvis PDFs and auto-open
+    return await doc.save();
+  }
+
+  static Future<void> generateDetailedVehicleSummaryPdf({
+    required String title,
+    required String subTitle,
+    required List<Map<String, dynamic>> summaryData,
+    required bool includeMaterialProfit,
+    required Map<String, String> totals,
+    required String? businessName,
+    required String? logoPath,
+  }) async {
+    final bytes = await generateDetailedVehicleSummaryBytes(
+      title: title,
+      subTitle: subTitle,
+      summaryData: summaryData,
+      includeMaterialProfit: includeMaterialProfit,
+      totals: totals,
+      businessName: businessName,
+      logoPath: logoPath,
+    );
     await _saveAndOpenPdf(bytes, title);
+  }
+
+  static Future<File> getDetailedVehicleSummaryPdfFile({
+    required String title,
+    required String subTitle,
+    required List<Map<String, dynamic>> summaryData,
+    required bool includeMaterialProfit,
+    required Map<String, String> totals,
+    required String? businessName,
+    required String? logoPath,
+  }) async {
+    final bytes = await generateDetailedVehicleSummaryBytes(
+      title: title,
+      subTitle: subTitle,
+      summaryData: summaryData,
+      includeMaterialProfit: includeMaterialProfit,
+      totals: totals,
+      businessName: businessName,
+      logoPath: logoPath,
+    );
+    final dir = await getTemporaryDirectory();
+    final file = File('${dir.path}/${title.replaceAll(' ', '_')}.pdf');
+    await file.writeAsBytes(bytes);
+    return file;
   }
 
   /// Saves PDF bytes to Documents\Jarvis PDFs\ and opens it with the default viewer.
@@ -1671,6 +1728,7 @@ class PdfService {
   static Future<Uint8List> generateCustomerAccountStatementBytes({
     required String customerName,
     required String customerAddress,
+    String? customerPhone,
     required List<List<String>> dataRows,
     required Map<String, String> totals,
     List<List<String>>? paymentRows,
@@ -1785,6 +1843,10 @@ class PdfService {
                           pw.SizedBox(height: 2),
                         if (customerAddress.isNotEmpty)
                           pw.Text('$customerAddress.', style: const pw.TextStyle(fontSize: 11)),
+                        if (customerPhone != null && customerPhone.trim().isNotEmpty) ...[
+                          pw.SizedBox(height: 2),
+                          pw.Text('Ph: ${customerPhone.trim()}', style: pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold)),
+                        ],
                       ],
                     ),
                   ),
@@ -1956,6 +2018,7 @@ class PdfService {
   static Future<void> generateCustomerAccountStatementPdf({
     required String customerName,
     required String customerAddress,
+    String? customerPhone,
     required List<List<String>> dataRows,
     required Map<String, String> totals,
     List<List<String>>? paymentRows,
@@ -1968,6 +2031,7 @@ class PdfService {
     final bytes = await generateCustomerAccountStatementBytes(
       customerName: customerName,
       customerAddress: customerAddress,
+      customerPhone: customerPhone,
       dataRows: dataRows,
       totals: totals,
       paymentRows: paymentRows,
@@ -1983,6 +2047,7 @@ class PdfService {
   static Future<void> saveCustomerAccountStatementPdf({
     required String customerName,
     required String customerAddress,
+    String? customerPhone,
     required List<List<String>> dataRows,
     required Map<String, String> totals,
     List<List<String>>? paymentRows,
@@ -1995,6 +2060,7 @@ class PdfService {
     final bytes = await generateCustomerAccountStatementBytes(
       customerName: customerName,
       customerAddress: customerAddress,
+      customerPhone: customerPhone,
       dataRows: dataRows,
       totals: totals,
       paymentRows: paymentRows,
@@ -2010,6 +2076,7 @@ class PdfService {
   static Future<File> getCustomerAccountStatementPdfFile({
     required String customerName,
     required String customerAddress,
+    String? customerPhone,
     required List<List<String>> dataRows,
     required Map<String, String> totals,
     List<List<String>>? paymentRows,
@@ -2022,6 +2089,7 @@ class PdfService {
     final bytes = await generateCustomerAccountStatementBytes(
       customerName: customerName,
       customerAddress: customerAddress,
+      customerPhone: customerPhone,
       dataRows: dataRows,
       totals: totals,
       paymentRows: paymentRows,

@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../theme.dart';
 import '../data/data_provider.dart';
 import '../widgets/dev_branding_badge.dart';
+import 'site_expenses_screen.dart';
 
 class StorageTankHistoryScreen extends StatefulWidget {
   const StorageTankHistoryScreen({super.key});
@@ -285,11 +286,22 @@ class _StorageTankHistoryScreenState extends State<StorageTankHistoryScreen> wit
                 ],
               ),
             ),
-            trailing: IconButton(
-              icon: const Icon(Icons.delete_outline, color: Colors.red, size: 20),
-              onPressed: () {
-                _confirmDeleteIssue(context, data, id, vNo, liters);
-              },
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.edit_outlined, color: Colors.orange, size: 20),
+                  onPressed: () {
+                    showDispenseFuelDialog(context, data, existingIssue: item);
+                  },
+                ),
+                IconButton(
+                  icon: const Icon(Icons.delete_outline, color: Colors.red, size: 20),
+                  onPressed: () {
+                    _confirmDeleteIssue(context, data, id, vNo, liters);
+                  },
+                ),
+              ],
             ),
           ),
         );
