@@ -647,6 +647,21 @@ class _AddDriverPaymentScreenState extends State<AddDriverPaymentScreen> {
     String selectedMode = (pay['mode'] ?? 'GPAY').toString().trim();
     if (selectedMode.isEmpty) selectedMode = 'Cash';
 
+    DateTime editSelectedDate;
+    try {
+      if (pay['date'] != null) {
+        editSelectedDate = DateFormat('dd MMM yyyy').parse(pay['date'].toString());
+      } else {
+        editSelectedDate = _selectedDate;
+      }
+    } catch (_) {
+      try {
+        editSelectedDate = DateTime.parse(pay['date'].toString());
+      } catch (_) {
+        editSelectedDate = _selectedDate;
+      }
+    }
+
     final driverId = pay['driver_id']?.toString();
     final driver = data.allDrivers.firstWhere(
       (d) => d['id'].toString() == driverId,
@@ -666,6 +681,37 @@ class _AddDriverPaymentScreenState extends State<AddDriverPaymentScreen> {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    const Text('Date:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                    const SizedBox(height: 6),
+                    InkWell(
+                      onTap: () async {
+                        final picked = await showDatePicker(
+                          context: context,
+                          initialDate: editSelectedDate,
+                          firstDate: DateTime(2000),
+                          lastDate: DateTime(2100),
+                        );
+                        if (picked != null) {
+                          setDialogState(() {
+                            editSelectedDate = picked;
+                          });
+                        }
+                      },
+                      child: InputDecorator(
+                        decoration: const InputDecoration(
+                          border: OutlineInputBorder(),
+                          isDense: true,
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(DateFormat('dd MMM yyyy').format(editSelectedDate)),
+                            const Icon(Icons.calendar_today, size: 18),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 14),
                     const Text('Amount Paid (₹):', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
                     const SizedBox(height: 6),
                     TextField(
@@ -726,7 +772,7 @@ class _AddDriverPaymentScreenState extends State<AddDriverPaymentScreen> {
                       pay['id'],
                       driverId: driverId ?? '',
                       amount: newAmt,
-                      date: _selectedDate,
+                      date: editSelectedDate,
                       mode: selectedMode,
                       time: pay['time'],
                     );

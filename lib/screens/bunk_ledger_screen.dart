@@ -530,13 +530,19 @@ class _BunkLedgerScreenState extends State<BunkLedgerScreen> with SingleTickerPr
                    ? item['vehicle_display'].toString()
                    : data.getVehicleDisplayName(vNo);
                if (vehicleDisplay.isEmpty) {
-                 vehicleDisplay = item['description'] ?? 'Expense';
+                 vehicleDisplay = '-';
+               }
+
+               String userDesc = (item['user_description'] ?? item['notes'] ?? item['description'] ?? '').toString().trim();
+               if (userDesc.isEmpty || userDesc.toLowerCase() == vehicleDisplay.toLowerCase()) {
+                 userDesc = '-';
                }
 
                billRows.add([
                    item['date'] ?? '',
                    vehicleDisplay,
-                   qtyDisplay,
+                   userDesc,
+                   qtyDisplay.isNotEmpty ? qtyDisplay : '-',
                    'Rs. ${amt.toInt()}'
                ]);
           }
@@ -548,32 +554,33 @@ class _BunkLedgerScreenState extends State<BunkLedgerScreen> with SingleTickerPr
                totalPaidInRange += amt;
                paymentRows.add([
                    item['date'] ?? '',
-                   item['type'] ?? 'Payment',
-                   item['description'] ?? (item['title'] ?? ''),
+                   '-',
+                   item['description'] ?? (item['title'] ?? 'Payment Made'),
+                   '-',
                    'Rs. ${amt.toInt()}'
                ]);
           }
 
           final List<List<String>> finalRows = [];
           if (billRows.isNotEmpty) {
-            finalRows.add(['--- BILLS ---', '', '', '']);
+            finalRows.add(['--- BILLS ---', '', '', '', '']);
             finalRows.addAll(billRows);
-            finalRows.add(['', '', '', '']);
+            finalRows.add(['', '', '', '', '']);
           }
 
           final matPdfSummary = _calculateMaterialSummary(filteredBills);
           if (matPdfSummary.isNotEmpty) {
-            finalRows.add(['--- SUMMARY ---', '', '', '']);
+            finalRows.add(['--- SUMMARY ---', '', '', '', '']);
             for (var mat in matPdfSummary.values) {
               double qty = mat['quantity'];
               String qtyStr = (qty % 1 == 0) ? qty.toInt().toString() : qty.toStringAsFixed(1);
-              finalRows.add(['Summary', mat['name'], '$qtyStr ${mat['unit']}'.trim(), '-']);
+              finalRows.add(['Summary', '-', mat['name'], '$qtyStr ${mat['unit']}'.trim(), '-']);
             }
-            finalRows.add(['', '', '', '']);
+            finalRows.add(['', '', '', '', '']);
           }
 
           if (paymentRows.isNotEmpty) {
-            finalRows.add(['--- PAYMENTS ---', '', '', '']);
+            finalRows.add(['--- PAYMENTS ---', '', '', '', '']);
             finalRows.addAll(paymentRows);
           }
 
@@ -590,7 +597,7 @@ class _BunkLedgerScreenState extends State<BunkLedgerScreen> with SingleTickerPr
              await PdfService.saveLedgerPdf(
               title: '${widget.supplierName} Ledger',
               subTitle: 'Bills & Payments Statement',
-              headers: ['Date', 'Description', 'Qty', 'Amount'],
+              headers: ['Date', 'Vehicle', 'Description', 'Qty', 'Amount'],
               data: finalRows,
               totals: totals,
               businessName: businessName,
@@ -600,7 +607,7 @@ class _BunkLedgerScreenState extends State<BunkLedgerScreen> with SingleTickerPr
              await PdfService.generateLedgerPdf(
               title: '${widget.supplierName} Ledger',
               subTitle: 'Bills & Payments Statement',
-              headers: ['Date', 'Description', 'Qty', 'Amount'],
+              headers: ['Date', 'Vehicle', 'Description', 'Qty', 'Amount'],
               data: finalRows,
               totals: totals,
               businessName: businessName,
@@ -654,12 +661,24 @@ class _BunkLedgerScreenState extends State<BunkLedgerScreen> with SingleTickerPr
                double amt = data.parseAmount(item['bill_amount']);
                totalBilledInRange += amt;
 
+               String vNo = (item['vehicle_no'] ?? item['number'] ?? '').toString().trim();
+               String vehicleDisplay = (item['vehicle_display'] != null && item['vehicle_display'].toString().isNotEmpty)
+                   ? item['vehicle_display'].toString()
+                   : data.getVehicleDisplayName(vNo);
+               if (vehicleDisplay.isEmpty) {
+                 vehicleDisplay = '-';
+               }
+
+               String userDesc = (item['user_description'] ?? item['notes'] ?? item['description'] ?? '').toString().trim();
+               if (userDesc.isEmpty || userDesc.toLowerCase() == vehicleDisplay.toLowerCase()) {
+                 userDesc = '-';
+               }
+
                billRows.add([
                    item['date'] ?? '',
-                   item['vehicle_no'] != null && item['vehicle_no'].toString().isNotEmpty
-                        ? item['vehicle_no']
-                        : (item['description'] ?? 'Expense'),
-                   qtyDisplay,
+                   vehicleDisplay,
+                   userDesc,
+                   qtyDisplay.isNotEmpty ? qtyDisplay : '-',
                    'Rs. ${amt.toInt()}'
                ]);
           }
@@ -671,32 +690,33 @@ class _BunkLedgerScreenState extends State<BunkLedgerScreen> with SingleTickerPr
                totalPaidInRange += amt;
                paymentRows.add([
                    item['date'] ?? '',
-                   item['type'] ?? 'Payment',
-                   item['description'] ?? (item['title'] ?? ''),
+                   '-',
+                   item['description'] ?? (item['title'] ?? 'Payment Made'),
+                   '-',
                    'Rs. ${amt.toInt()}'
                ]);
           }
 
           final List<List<String>> finalRows = [];
           if (billRows.isNotEmpty) {
-            finalRows.add(['--- BILLS ---', '', '', '']);
+            finalRows.add(['--- BILLS ---', '', '', '', '']);
             finalRows.addAll(billRows);
-            finalRows.add(['', '', '', '']);
+            finalRows.add(['', '', '', '', '']);
           }
 
           final matExcelSummary = _calculateMaterialSummary(filteredBills);
           if (matExcelSummary.isNotEmpty) {
-            finalRows.add(['--- SUMMARY ---', '', '', '']);
+            finalRows.add(['--- SUMMARY ---', '', '', '', '']);
             for (var mat in matExcelSummary.values) {
               double qty = mat['quantity'];
               String qtyStr = (qty % 1 == 0) ? qty.toInt().toString() : qty.toStringAsFixed(1);
-              finalRows.add(['Summary', mat['name'], '$qtyStr ${mat['unit']}'.trim(), '-']);
+              finalRows.add(['Summary', '-', mat['name'], '$qtyStr ${mat['unit']}'.trim(), '-']);
             }
-            finalRows.add(['', '', '', '']);
+            finalRows.add(['', '', '', '', '']);
           }
 
           if (paymentRows.isNotEmpty) {
-            finalRows.add(['--- PAYMENTS ---', '', '', '']);
+            finalRows.add(['--- PAYMENTS ---', '', '', '', '']);
             finalRows.addAll(paymentRows);
           }
 
@@ -711,7 +731,7 @@ class _BunkLedgerScreenState extends State<BunkLedgerScreen> with SingleTickerPr
           await ExcelService.generateLedgerExcel(
              title: '${widget.supplierName} Ledger',
              subTitle: 'Bills & Payments Statement',
-             headers: ['Date', 'Description', 'Qty', 'Amount'],
+             headers: ['Date', 'Vehicle', 'Description', 'Qty', 'Amount'],
              data: finalRows,
              totals: totals,
              businessName: businessName,
@@ -763,12 +783,24 @@ class _BunkLedgerScreenState extends State<BunkLedgerScreen> with SingleTickerPr
                double amt = data.parseAmount(item['bill_amount']);
                totalBilledInRange += amt;
 
+               String vNo = (item['vehicle_no'] ?? item['number'] ?? '').toString().trim();
+               String vehicleDisplay = (item['vehicle_display'] != null && item['vehicle_display'].toString().isNotEmpty)
+                   ? item['vehicle_display'].toString()
+                   : data.getVehicleDisplayName(vNo);
+               if (vehicleDisplay.isEmpty) {
+                 vehicleDisplay = '-';
+               }
+
+               String userDesc = (item['user_description'] ?? item['notes'] ?? item['description'] ?? '').toString().trim();
+               if (userDesc.isEmpty || userDesc.toLowerCase() == vehicleDisplay.toLowerCase()) {
+                 userDesc = '-';
+               }
+
                billRows.add([
                    item['date'] ?? '',
-                   item['vehicle_no'] != null && item['vehicle_no'].toString().isNotEmpty
-                        ? item['vehicle_no']
-                        : (item['description'] ?? 'Expense'),
-                   qtyDisplay,
+                   vehicleDisplay,
+                   userDesc,
+                   qtyDisplay.isNotEmpty ? qtyDisplay : '-',
                    'Rs. ${amt.toInt()}'
                ]);
           }
@@ -780,32 +812,33 @@ class _BunkLedgerScreenState extends State<BunkLedgerScreen> with SingleTickerPr
                totalPaidInRange += amt;
                paymentRows.add([
                    item['date'] ?? '',
-                   item['type'] ?? 'Payment',
-                   item['description'] ?? (item['title'] ?? ''),
+                   '-',
+                   item['description'] ?? (item['title'] ?? 'Payment Made'),
+                   '-',
                    'Rs. ${amt.toInt()}'
                ]);
           }
 
           final List<List<String>> finalRows = [];
           if (billRows.isNotEmpty) {
-            finalRows.add(['--- BILLS ---', '', '', '']);
+            finalRows.add(['--- BILLS ---', '', '', '', '']);
             finalRows.addAll(billRows);
-            finalRows.add(['', '', '', '']);
+            finalRows.add(['', '', '', '', '']);
           }
 
           final matPdfSummary = _calculateMaterialSummary(filteredBills);
           if (matPdfSummary.isNotEmpty) {
-            finalRows.add(['--- SUMMARY ---', '', '', '']);
+            finalRows.add(['--- SUMMARY ---', '', '', '', '']);
             for (var mat in matPdfSummary.values) {
               double qty = mat['quantity'];
               String qtyStr = (qty % 1 == 0) ? qty.toInt().toString() : qty.toStringAsFixed(1);
-              finalRows.add(['Summary', mat['name'], '$qtyStr ${mat['unit']}'.trim(), '-']);
+              finalRows.add(['Summary', '-', mat['name'], '$qtyStr ${mat['unit']}'.trim(), '-']);
             }
-            finalRows.add(['', '', '', '']);
+            finalRows.add(['', '', '', '', '']);
           }
 
           if (paymentRows.isNotEmpty) {
-            finalRows.add(['--- PAYMENTS ---', '', '', '']);
+            finalRows.add(['--- PAYMENTS ---', '', '', '', '']);
             finalRows.addAll(paymentRows);
           }
 
@@ -821,7 +854,7 @@ class _BunkLedgerScreenState extends State<BunkLedgerScreen> with SingleTickerPr
           final pdfFile = await PdfService.getLedgerPdfFile(
              title: '${widget.supplierName} Ledger',
              subTitle: 'Bills & Payments Statement',
-             headers: ['Date', 'Description', 'Qty', 'Amount'],
+             headers: ['Date', 'Vehicle', 'Description', 'Qty', 'Amount'],
              data: finalRows,
              totals: totals,
              businessName: businessName,

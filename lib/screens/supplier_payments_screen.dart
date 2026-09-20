@@ -476,6 +476,7 @@ class _SupplierPaymentsScreenState extends State<SupplierPaymentsScreen> {
 
   void _showPaymentDialog(BuildContext context, Map<String, dynamic> supplier) {
     final amountController = TextEditingController();
+    final descController = TextEditingController();
     DateTime selectedDate = DateTime.now();
     bool isDiscount = false;
     
@@ -497,6 +498,14 @@ class _SupplierPaymentsScreenState extends State<SupplierPaymentsScreen> {
                 ),
                 keyboardType: TextInputType.number,
                 autofocus: true,
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: descController,
+                decoration: const InputDecoration(
+                  labelText: 'Description / Notes (Optional)',
+                  border: OutlineInputBorder(),
+                ),
               ),
               const SizedBox(height: 16),
               Row(
@@ -542,12 +551,13 @@ class _SupplierPaymentsScreenState extends State<SupplierPaymentsScreen> {
               onPressed: () {
                      final amountValue = double.tryParse(amountController.text) ?? 0;
                      if (amountValue > 0) {
+                        String customNotes = descController.text.trim();
                         Provider.of<DataProvider>(context, listen: false).recordSupplierPayment(
                           supplier['id'], 
                           amountValue, 
                           DateFormat('dd MMM yyyy').format(selectedDate),
                           isDiscount: isDiscount,
-                          notes: isDiscount ? 'Discount Allowed' : 'Payment Made',
+                          notes: customNotes.isNotEmpty ? customNotes : (isDiscount ? 'Discount Allowed' : 'Payment Made'),
                         );
                         Navigator.pop(context);
                         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(isDiscount ? 'Discount Recorded' : 'Payment Recorded')));
@@ -640,14 +650,52 @@ class SupplierDetailScreen extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 24),
-                    const Center(
-                      child: Padding(
-                        padding: EdgeInsets.all(32.0),
-                        child: Text(
-                          'No recent payment history',
-                          style: TextStyle(color: Colors.grey),
-                        ),
-                      ),
+                    const Text('RECENT PAYMENTS', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.grey)),
+                    const SizedBox(height: 8),
+                    Builder(
+                      builder: (context) {
+                        final payments = data.supplierPayments.where(
+                          (p) => p['supplier_id']?.toString() == currentSupplier['id']?.toString()
+                        ).toList();
+
+                        payments.sort((a, b) {
+                          try {
+                            DateTime da = DateFormat('dd MMM yyyy').parse(a['date'] ?? '');
+                            DateTime db = DateFormat('dd MMM yyyy').parse(b['date'] ?? '');
+                            return db.compareTo(da);
+                          } catch (_) { return 0; }
+                        });
+
+                        if (payments.isEmpty) {
+                          return const Center(
+                            child: Padding(
+                              padding: EdgeInsets.all(24.0),
+                              child: Text('No recent payment history', style: TextStyle(color: Colors.grey)),
+                            ),
+                          );
+                        }
+
+                        return Column(
+                          children: payments.map((pay) {
+                            final isDiscount = pay['type'] == 'Discount' || (pay['notes'] ?? '').toString().toLowerCase().contains('discount');
+                            return Card(
+                              margin: const EdgeInsets.only(bottom: 8),
+                              child: ListTile(
+                                leading: CircleAvatar(
+                                  backgroundColor: isDiscount ? Colors.orange : Colors.green,
+                                  child: Icon(isDiscount ? Icons.local_offer : Icons.check, color: Colors.white, size: 18),
+                                ),
+                                title: Text(pay['amount'] ?? '₹0', style: TextStyle(fontWeight: FontWeight.bold, color: isDiscount ? Colors.orange.shade900 : Colors.green.shade900)),
+                                subtitle: Text('${pay['date'] ?? ''}\n${pay['notes'] ?? pay['description'] ?? (isDiscount ? 'Discount Allowed' : 'Payment Made')}'),
+                                trailing: IconButton(
+                                  icon: const Icon(Icons.edit, size: 20, color: JarvisTheme.primary),
+                                  onPressed: () => _showEditSupplierPaymentDialog(context, pay, data),
+                                ),
+                              ),
+                            );
+                          }).toList(),
+                        );
+                      }
                     ),
                   ],
                 ),
@@ -656,6 +704,125 @@ class SupplierDetailScreen extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+
+  void _showEditSupplierPaymentDialog(BuildContext context, Map<String, dynamic> pay, DataProvider data) {
+    final amountController = TextEditingController(text: data.parseAmount(pay['amount']).toInt().toString());
+    final descController = TextEditingController(text: pay['notes'] ?? pay['description'] ?? '');
+    DateTime selectedDate = DateTime.now();
+    if (pay['date'] != null) {
+      try { selectedDate = DateFormat('dd MMM yyyy').parse(pay['date']); } catch (_) {}
+    }
+    bool isDiscount = pay['type'] == 'Discount' || (pay['notes'] ?? '').toString().toLowerCase().contains('discount');
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setState) => AlertDialog(
+          title: const Text('Edit Supplier Payment'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: amountController,
+                decoration: const InputDecoration(
+                  labelText: 'Amount (₹)',
+                  border: OutlineInputBorder(),
+                ),
+                keyboardType: TextInputType.number,
+                autofocus: true,
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: descController,
+                decoration: const InputDecoration(
+                  labelText: 'Description / Notes',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Date: ${DateFormat('dd MMM yyyy').format(selectedDate)}',
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.calendar_today),
+                    onPressed: () async {
+                      final picked = await showDatePicker(
+                        context: context,
+                        initialDate: selectedDate,
+                        firstDate: DateTime(2020),
+                        lastDate: DateTime(2030),
+                      );
+                      if (picked != null) {
+                        setState(() => selectedDate = picked);
+                      }
+                    },
+                  ),
+                ],
+              ),
+              const Divider(),
+              SwitchListTile(
+                title: const Text('Is this a Discount?', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                value: isDiscount,
+                activeColor: Colors.orange,
+                subtitle: const Text('Discount allowed by Supplier - reduces balance without paying cash', style: TextStyle(fontSize: 11)),
+                onChanged: (val) => setState(() => isDiscount = val),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () async {
+                Navigator.pop(ctx);
+                bool confirm = await showDialog(
+                  context: context,
+                  builder: (ctx2) => AlertDialog(
+                    title: const Text('Confirm Delete'),
+                    content: const Text('Are you sure you want to delete this payment entry?'),
+                    actions: [
+                      TextButton(onPressed: () => Navigator.pop(ctx2, false), child: const Text('CANCEL')),
+                      TextButton(onPressed: () => Navigator.pop(ctx2, true), child: const Text('DELETE', style: TextStyle(color: Colors.red))),
+                    ],
+                  ),
+                ) ?? false;
+                if (confirm) {
+                  await data.deleteSupplierPayment(pay['id']);
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Payment Deleted')));
+                  }
+                }
+              },
+              child: const Text('DELETE', style: TextStyle(color: Colors.red)),
+            ),
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('CANCEL')),
+            ElevatedButton(
+              onPressed: () async {
+                final amt = double.tryParse(amountController.text) ?? 0;
+                if (amt <= 0) return;
+                Navigator.pop(ctx);
+                final formattedDate = DateFormat('dd MMM yyyy').format(selectedDate);
+                final notes = descController.text.trim().isNotEmpty ? descController.text.trim() : (isDiscount ? 'Discount Allowed' : 'Payment Made');
+                await data.updateSupplierPayment(pay['id'], {
+                  'amount': '₹${amt.toInt()}',
+                  'date': formattedDate,
+                  'type': isDiscount ? 'Discount' : 'Payment',
+                  'notes': notes,
+                });
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Payment Updated')));
+                }
+              },
+              child: const Text('UPDATE'),
+            ),
+          ],
+        ),
+      ),
     );
   }
 

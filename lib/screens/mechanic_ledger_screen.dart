@@ -173,6 +173,34 @@ class _MechanicLedgerScreenState extends State<MechanicLedgerScreen> with Single
     );
   }
 
+  Map<String, Map<String, dynamic>> _calculateMaterialSummary(List<Map<String, dynamic>> items) {
+    final Map<String, Map<String, dynamic>> summary = {};
+    for (var item in items) {
+      String matName = (item['material_name'] ?? '').toString().trim();
+      if (matName.isEmpty) {
+        String title = (item['title'] ?? item['description'] ?? '').toString();
+        if (title.contains(':')) {
+          matName = title.split(':').first.trim();
+        }
+      }
+      if (matName.isEmpty) continue;
+
+      double qty = double.tryParse((item['quantity'] ?? '0').toString().replaceAll(RegExp(r'[^0-9.]'), '')) ?? 0.0;
+      String unit = (item['unit'] ?? '').toString().trim();
+
+      String key = '${matName.toLowerCase()}||${unit.toLowerCase()}';
+      if (!summary.containsKey(key)) {
+        summary[key] = {
+          'name': matName,
+          'quantity': 0.0,
+          'unit': unit,
+        };
+      }
+      summary[key]!['quantity'] += qty;
+    }
+    return summary;
+  }
+
   Widget _buildBillsList(List<Map<String, dynamic>> items, DataProvider data) {
     if (items.isEmpty) {
       return Center(
@@ -222,6 +250,7 @@ class _MechanicLedgerScreenState extends State<MechanicLedgerScreen> with Single
                     child: Icon(Icons.build, color: Colors.white, size: 20),
                   ),
                   title: Text(item['title'] ?? 'Maintenance', style: const TextStyle(fontWeight: FontWeight.bold)),
+                  onTap: () => _showInfoDialog(context, item, data),
                   subtitle: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -293,6 +322,7 @@ class _MechanicLedgerScreenState extends State<MechanicLedgerScreen> with Single
                     child: Icon(isDiscount ? Icons.local_offer : Icons.check, color: Colors.white),
                   ),
                   title: Text(item['title'] ?? (isDiscount ? 'Discount Received' : 'Payment Made'), style: const TextStyle(fontWeight: FontWeight.bold)),
+                  onTap: () => _showInfoDialog(context, item, data),
                   subtitle: Text('${item['date'] ?? ''}\n${item['description'] ?? ''}'),
                   trailing: Text(
                     item['amount'],
@@ -309,6 +339,7 @@ class _MechanicLedgerScreenState extends State<MechanicLedgerScreen> with Single
 
   void _showAddPaymentDialog(BuildContext context) {
      final controller = TextEditingController();
+     final descController = TextEditingController();
      DateTime selectedDate = DateTime.now();
      bool isDiscount = false;
      
@@ -328,7 +359,15 @@ class _MechanicLedgerScreenState extends State<MechanicLedgerScreen> with Single
                   prefixText: '₹ ',
                 ),
                 keyboardType: TextInputType.number,
-                 autofocus: true,
+                autofocus: true,
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: descController,
+                decoration: const InputDecoration(
+                  labelText: 'Description / Notes (Optional)',
+                  border: OutlineInputBorder(),
+                ),
               ),
               const SizedBox(height: 16),
               Row(
@@ -376,24 +415,297 @@ class _MechanicLedgerScreenState extends State<MechanicLedgerScreen> with Single
                  Navigator.pop(context);
                  
                  try {
+                    String customNotes = descController.text.trim();
                     await data.recordSupplierPayment(
                       widget.supplierId, 
                       amount, 
                       DateFormat('dd MMM yyyy').format(selectedDate),
                       isDiscount: isDiscount,
-                      notes: isDiscount ? 'Discount Allowed' : 'Payment Made',
+                      notes: customNotes.isNotEmpty ? customNotes : (isDiscount ? 'Discount Allowed' : 'Payment Made'),
                     );
                     
-                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(isDiscount ? 'Discount Recorded' : 'Payment Recorded')));
+                    if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(isDiscount ? 'Discount Recorded' : 'Payment Recorded')));
 
                  } catch (e) {
-                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+                    if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
                  }
               },
               child: const Text('SAVE'),
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  void _showInfoDialog(BuildContext context, Map<String, dynamic> item, DataProvider data) {
+    bool isPayment = item['type'] == 'Payment' || item['type'] == 'Expense Payment' || item['type'] == 'Discount';
+    bool isVehicle = item['type'] == 'Vehicle' || item['source_type'] == 'Vehicle';
+    bool isExpense = item['type'] == 'Expense' || item['source_type'] == 'Expense';
+
+    showDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(
+          isPayment ? 'Payment Info' : 'Entry Info',
+          style: const TextStyle(fontWeight: FontWeight.bold, color: JarvisTheme.primary),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _infoRow('Date', item['date'] ?? 'N/A'),
+            if (isPayment) ...[
+               _infoRow('Amount', item['amount'] ?? 'N/A'),
+               if (item['description'] != null && item['description'].toString().isNotEmpty)
+                 _infoRow('For', item['description']),
+            ] else if (isVehicle) ...[
+                _infoRow('Vehicle', item['vehicle_no'] ?? item['number'] ?? ''),
+                _infoRow('Material', item['material_name'] ?? 'N/A'),
+                _infoRow('Bill Amount', '₹${data.parseAmount(item['bill_amount'] ?? item['total']).toInt()}'),
+                if (item['quantity'] != null && item['quantity'].toString().isNotEmpty)
+                   _infoRow('Quantity', '${item['quantity']} ${item['unit'] ?? ''}'),
+                if (item['description'] != null && item['description'].toString().isNotEmpty)
+                   _infoRow('Desc', item['description']),
+            ] else if (isExpense) ...[
+                _infoRow('Description', item['description'] ?? item['title'] ?? ''),
+                _infoRow('Amount', '₹${data.parseAmount(item['bill_amount'] ?? item['amount']).toInt()}'),
+            ],
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('CLOSE')),
+          if (!AppConfig.isReadOnly && (isPayment || isVehicle || isExpense))
+             ElevatedButton.icon(
+               onPressed: () {
+                 Navigator.pop(dialogContext);
+                 if (isPayment) {
+                    _showEditPaymentDialog(context, item, data);
+                 } else if (isExpense) {
+                    _showEditBillDialog(context, item, data);
+                 }
+               },
+               icon: const Icon(Icons.edit),
+               label: const Text('EDIT'),
+               style: ElevatedButton.styleFrom(backgroundColor: JarvisTheme.primary, foregroundColor: Colors.white),
+             ),
+        ],
+      ),
+    );
+  }
+
+  Widget _infoRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 90,
+            child: Text('$label:', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.grey)),
+          ),
+          Expanded(
+            child: Text(value, style: const TextStyle(fontSize: 14)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showEditPaymentDialog(BuildContext context, Map<String, dynamic> item, DataProvider data) {
+    if (AppConfig.isReadOnly) return;
+    final id = item['id'];
+    final subType = item['sub_type'];
+
+    if (id == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Cannot edit this payment directly.')));
+      return;
+    }
+    final amountController = TextEditingController(text: data.parseAmount(item['amount']).toInt().toString());
+    final descController = TextEditingController(text: item['notes'] ?? item['description'] ?? '');
+    DateTime selectedDate = DateTime.now();
+    if (item['date'] != null) {
+      try { selectedDate = DateFormat('dd MMM yyyy').parse(item['date']); } catch (_) {}
+    }
+
+    Future<bool> confirmDelete() async {
+      return await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Confirm Delete'),
+          content: const Text('Delete this payment entry?'),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('CANCEL')),
+            TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('DELETE', style: TextStyle(color: Colors.red))),
+          ],
+        ),
+      ) ?? false;
+    }
+
+    showDialog(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setState) => AlertDialog(
+          title: const Text('Edit Payment'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: amountController,
+                  decoration: const InputDecoration(labelText: 'Amount (₹)', border: OutlineInputBorder()),
+                  keyboardType: TextInputType.number,
+                  autofocus: true,
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        'Date: ${DateFormat('dd MMM yyyy').format(selectedDate)}',
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.calendar_today),
+                      onPressed: () async {
+                        final picked = await showDatePicker(
+                          context: context,
+                          initialDate: selectedDate,
+                          firstDate: DateTime(2020),
+                          lastDate: DateTime(2030),
+                        );
+                        if (picked != null) {
+                          setState(() => selectedDate = picked);
+                        }
+                      },
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: descController,
+                  decoration: const InputDecoration(labelText: 'Description / Notes', border: OutlineInputBorder()),
+                  maxLines: 2,
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () async {
+                Navigator.pop(dialogContext);
+                final ok = await confirmDelete();
+                if (!ok) return;
+                if (subType == 'initial_paid') {
+                  await data.updateExpense(id, {'paid': '₹0'});
+                } else if (subType == 'sub_payment') {
+                  await data.deleteExpenseSubPayment(id);
+                } else {
+                  await data.deleteSupplierPayment(id);
+                }
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Payment Deleted')));
+                }
+              },
+              child: const Text('DELETE', style: TextStyle(color: Colors.red)),
+            ),
+            TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('CANCEL')),
+            ElevatedButton(
+              onPressed: () async {
+                final amt = double.tryParse(amountController.text);
+                if (amt == null) return;
+                Navigator.pop(dialogContext);
+                final formattedDate = DateFormat('dd MMM yyyy').format(selectedDate);
+                final newDesc = descController.text.trim();
+                if (subType == 'initial_paid') {
+                  await data.updateExpense(id, {'paid': '₹${amt.toInt()}', 'date': formattedDate, 'title': newDesc});
+                } else if (subType == 'sub_payment') {
+                  await data.updateExpenseSubPayment(id, {'amount': '₹${amt.toInt()}', 'date': formattedDate, 'notes': newDesc});
+                } else {
+                  await data.updateSupplierPayment(id, {'amount': '₹${amt.toInt()}', 'date': formattedDate, 'notes': newDesc});
+                }
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Payment Updated')));
+                }
+              },
+              child: const Text('UPDATE'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showEditBillDialog(BuildContext context, Map<String, dynamic> item, DataProvider data) {
+    if (AppConfig.isReadOnly) return;
+    final id = item['id'];
+    if (id == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Cannot edit this bill directly.')));
+      return;
+    }
+
+    final amountController = TextEditingController(text: data.parseAmount(item['bill_amount'] ?? item['amount']).toInt().toString());
+    final descController = TextEditingController(text: item['description'] ?? item['title'] ?? '');
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Edit Expense Entry'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: amountController,
+              decoration: const InputDecoration(labelText: 'Amount (₹)', border: OutlineInputBorder()),
+              keyboardType: TextInputType.number,
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: descController,
+              decoration: const InputDecoration(labelText: 'Description', border: OutlineInputBorder()),
+              maxLines: 2,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(context);
+              bool confirm = await showDialog(
+                context: context,
+                builder: (context) => AlertDialog(
+                  title: const Text('Confirm Delete'),
+                  content: const Text('Are you sure you want to delete this expense?'),
+                  actions: [
+                    TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('CANCEL')),
+                    TextButton(
+                      onPressed: () => Navigator.pop(context, true),
+                      child: const Text('DELETE', style: TextStyle(color: Colors.red)),
+                    ),
+                  ],
+                ),
+              ) ?? false;
+              if (confirm) {
+                await data.deleteExpense(id);
+                if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Expense Deleted')));
+              }
+            },
+            child: const Text('DELETE', style: TextStyle(color: Colors.red)),
+          ),
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('CANCEL')),
+          ElevatedButton(
+            onPressed: () async {
+              final amt = double.tryParse(amountController.text);
+              if (amt == null) return;
+              Navigator.pop(context);
+              final newDesc = descController.text.trim();
+              await data.updateExpense(id, {'amount': '₹${amt.toInt()}', 'description': newDesc, 'title': newDesc});
+              if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Expense Updated')));
+            },
+            child: const Text('UPDATE'),
+          ),
+        ],
       ),
     );
   }
@@ -480,7 +792,18 @@ class _MechanicLedgerScreenState extends State<MechanicLedgerScreen> with Single
             finalRows.addAll(billRows);
             finalRows.add(['', '', '', '']);
           }
-          
+
+          final matPdfSummary = _calculateMaterialSummary(filteredBills);
+          if (matPdfSummary.isNotEmpty) {
+            finalRows.add(['--- SUMMARY ---', '', '', '']);
+            for (var mat in matPdfSummary.values) {
+              double qty = mat['quantity'];
+              String qtyStr = (qty % 1 == 0) ? qty.toInt().toString() : qty.toStringAsFixed(1);
+              finalRows.add(['Summary', '-', mat['name'], '$qtyStr ${mat['unit']}'.trim()]);
+            }
+            finalRows.add(['', '', '', '']);
+          }
+
           if (paymentRows.isNotEmpty) {
             finalRows.add(['--- PAYMENTS ---', '', '', '']);
             finalRows.addAll(paymentRows);
@@ -611,6 +934,18 @@ class _MechanicLedgerScreenState extends State<MechanicLedgerScreen> with Single
             finalRows.addAll(billRows);
             finalRows.add(['', '', '', '']);
           }
+
+          final matExcelSummary = _calculateMaterialSummary(filteredBills);
+          if (matExcelSummary.isNotEmpty) {
+            finalRows.add(['--- SUMMARY ---', '', '', '']);
+            for (var mat in matExcelSummary.values) {
+              double qty = mat['quantity'];
+              String qtyStr = (qty % 1 == 0) ? qty.toInt().toString() : qty.toStringAsFixed(1);
+              finalRows.add(['Summary', '-', mat['name'], '$qtyStr ${mat['unit']}'.trim()]);
+            }
+            finalRows.add(['', '', '', '']);
+          }
+
           if (paymentRows.isNotEmpty) {
             finalRows.add(['--- PAYMENTS ---', '', '', '']);
             finalRows.addAll(paymentRows);

@@ -679,14 +679,18 @@ class PdfService {
                     children: cleanTotals.entries
                         .where((e) => !e.key.toLowerCase().contains('advance'))
                         .map((e) {
-                      final isBalance = e.key.toLowerCase().contains('balance');
-                      final color = isBalance ? PdfColors.indigo900 : PdfColors.black;
+                      final keyLower = e.key.toLowerCase();
+                      final isBalance = keyLower.contains('balance');
+                      final isPaid = keyLower.contains('paid');
+                      final color = isBalance
+                          ? PdfColors.red700
+                          : (isPaid ? PdfColor.fromHex('#2e7d32') : PdfColors.black);
                       return pw.Padding(
                         padding: const pw.EdgeInsets.symmetric(vertical: 1.5),
                         child: pw.Row(
                           mainAxisSize: pw.MainAxisSize.min,
                           children: [
-                            pw.Text('${e.key}: ', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 9)),
+                            pw.Text('${e.key}: ', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 9, color: color)),
                             pw.Text(e.value, style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 9, color: color)),
                           ],
                         ),
@@ -1950,10 +1954,10 @@ class PdfService {
                             cellPadding: const pw.EdgeInsets.symmetric(horizontal: 5, vertical: 3),
                             headerCount: 1,
                             columnWidths: const {
-                              0: pw.FixedColumnWidth(28),
-                              1: pw.FixedColumnWidth(65),
-                              2: pw.FlexColumnWidth(1),
-                              3: pw.FixedColumnWidth(80),
+                              0: pw.FlexColumnWidth(0.8),
+                              1: pw.FlexColumnWidth(1.4),
+                              2: pw.FlexColumnWidth(4.5),
+                              3: pw.FlexColumnWidth(2.0),
                             },
                             cellAlignments: {
                               0: pw.Alignment.center,

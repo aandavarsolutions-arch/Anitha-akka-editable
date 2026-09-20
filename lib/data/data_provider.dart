@@ -3447,12 +3447,18 @@ class DataProvider extends ChangeNotifier {
       final String vNo = (e['vehicle_no'] ?? '').toString().trim();
       final String vDisplay = getVehicleDisplayName(vNo);
 
-      String desc = vDisplay.isNotEmpty ? vDisplay : (e['title'] ?? e['category'] ?? 'Fuel');
-      String itemTitle = 'Fuel: $desc';
+      String vehicleDesc = vDisplay.isNotEmpty ? vDisplay : (vNo.isNotEmpty ? vNo : '');
       final titleStr = (e['title'] ?? '').toString();
-      if (titleStr.contains('Bulk Diesel Storage Tank Purchase') || titleStr.toLowerCase().contains('storage tank')) {
-        itemTitle = 'Fuel: Bulk Diesel Storage Tank Purchase';
-        desc = 'Storage Tank';
+      if (titleStr.contains('Bulk Diesel Storage Tank Purchase') || titleStr.toLowerCase().contains('storage tank') || (e['notes'] ?? '').toString().toLowerCase().contains('storage tank')) {
+        vehicleDesc = 'Storage Tank';
+      }
+      if (vehicleDesc.isEmpty) {
+        vehicleDesc = e['category'] ?? 'Fuel';
+      }
+
+      String userNotes = (e['notes'] ?? e['description'] ?? '').toString().trim();
+      if (userNotes.toLowerCase() == vehicleDesc.toLowerCase()) {
+        userNotes = '';
       }
 
       allBills.add({
@@ -3460,9 +3466,10 @@ class DataProvider extends ChangeNotifier {
          'bill_amount': parseAmount(e['amount']),
          'source_type': 'Expense',
          'vehicle_no': vNo.isNotEmpty ? vNo : (e['vehicle_no'] ?? ''),
-         'vehicle_display': desc,
-         'title': itemTitle,
-         'description': desc,
+         'vehicle_display': vehicleDesc,
+         'title': 'Fuel: $vehicleDesc',
+         'description': userNotes.isNotEmpty ? userNotes : vehicleDesc,
+         'user_description': userNotes,
       });
     }
 
@@ -3476,6 +3483,7 @@ class DataProvider extends ChangeNotifier {
         final String vNo = (v['number'] ?? '').toString().trim();
         final String vDisplay = getVehicleDisplayName(vNo);
         final String matName = v['material_name'] ?? 'Fuel';
+        String userNotes = (v['description'] ?? v['notes'] ?? '').toString().trim();
 
         allBills.add({
            ...v,
@@ -3484,7 +3492,8 @@ class DataProvider extends ChangeNotifier {
            'vehicle_no': vNo,
            'vehicle_display': vDisplay.isNotEmpty ? vDisplay : vNo,
            'title': '$matName: ${vDisplay.isNotEmpty ? vDisplay : vNo}',
-           'description': '$matName - ${vDisplay.isNotEmpty ? vDisplay : vNo}',
+           'description': userNotes.isNotEmpty ? userNotes : matName,
+           'user_description': userNotes,
         });
     }
 
